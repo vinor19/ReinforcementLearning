@@ -1,12 +1,6 @@
-from multiprocessing.sharedctypes import Value
 import numpy as np
 from numpy import random
 from pprint import pprint
-from rich.layout import Layout
-from rich.panel import Panel
-from rich.table import Table
-from rich.box import SQUARE
-from rich.style import Style
 
 class GridWorld:
     def __init__(self):
@@ -68,10 +62,15 @@ class ValueIterator:
         for i in self.states:
             self.policy[i] = [0,1,2,3]
 
-    def train(self, epoch):
-        for i in range(epoch):
+    # Trains until converges
+    def train(self):
+        change = True
+        while change:
+            oldValues = self.values.copy()
             for state in self.states:
                 self.decideMoveWithUpdate(state)
+            change = not (oldValues == self.values).all()
+
     
     def decideMoveWithUpdate(self, state):
         # Set up rewards
@@ -109,12 +108,6 @@ def to2DList(array):
 if __name__ == "__main__":
     game = GridWorld()
 
-    # You get to play the game, 0 = up, 1 = right, 2 = down, 3 = left
-    # print(start(game))
-
-    # Reset game to random state
-    game.reset() 
-
     # Initializing ValueIterator
     test = ValueIterator(0.9)
 
@@ -122,7 +115,7 @@ if __name__ == "__main__":
     print("Reward before training: " + str(startValue(game, test)))
 
     # After training
-    test.train(5)
+    test.train()
 
     # Resetting makes the starting position random
     game.reset()
