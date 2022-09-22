@@ -149,10 +149,6 @@ class PolicyIterator:
         self.gamma = gamma
         self.theta = theta
 
-        self.initP()
-
-    def initP(self):
-        # Initialize policy 
         for i in self.states:
             self.policy[i] = self.actions.copy()
 
@@ -183,19 +179,21 @@ class PolicyIterator:
             stable = True
             for state in self.states:
                 oldActions = self.policy[state]
-                value = []
                 newActions = []
+                actionRewards = {}
+                maxReward = np.NINF
                 for a in self.actions:
                     self.game.position = state
-                    newPos, reward = self.game.move(a)
-                    value.append(reward + self.gamma*self.values[newPos])
-                    newActions.append(a)
-                value = np.array(np.round(value,5))
-                best = np.where(value == value.max())[0]
-                bestActions = [newActions[item] for item in best]
-                self.policy[state] = bestActions
+                    state_, reward = self.game.move(a)
+                    reward += (reward + self.gamma * self.values[state_])
+                    maxReward = max(maxReward, reward)
+                    actionRewards[a] = reward
 
-                if oldActions != bestActions:
+                self.policy[state] = [
+                    action for action,
+                    reward in actionRewards.items() if reward == maxReward
+                    ]
+                if oldActions != self.policy[state]:
                     stable = False
             policyRewards.append(self.currentReward())
                     
