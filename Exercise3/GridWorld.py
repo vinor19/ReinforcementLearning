@@ -1,4 +1,5 @@
 import numpy as np
+from matplotlib import pyplot as plt
 from numpy import random
 from pprint import pprint
 
@@ -7,22 +8,24 @@ from pprint import pprint
 allowedActions = ['u','d','l','r']
 
 class GridWorld:
-    def __init__(self):
-        self.exits = [0,15]
-        self.position = random.randint(1,14)
+    def __init__(self, size = 4):
+        self.size = size
+        self.gridSpace = size*size
+        self.exits = [0,(size*size)-1]
+        self.position = random.randint(1,(size*size)-2)
 
     def move(self, direction):
         if direction == 'u':
-                if self.position-4 >= 0:
-                    self.position-=4
+                if self.position-self.size  >= 0:
+                    self.position-=self.size
         elif direction == 'd':
-                if self.position+4 <= 15:
-                    self.position+=4
+                if self.position+self.size  < self.gridSpace:
+                    self.position+=self.size 
         elif direction == 'r':
-                if (self.position+1) % 4 != 0:
+                if (self.position+1) % self.size != 0:
                     self.position+=1
         elif direction == 'l':
-                if (self.position-1) % 4 != 3:
+                if (self.position-1) % self.size != self.size-1:
                     self.position-=1
         return self.position, -1
 
@@ -32,47 +35,54 @@ class GridWorld:
     def reset(self):
         self.position = random.randint(1,14)
 
-def start(game):
+def start(game, maxMoves = 50):
     game.reset()
     gameover = False
-    reward = 0
-    while not gameover:
+    totalReward = 0
+    moves = 0
+    while not gameover and moves < maxMoves:
+        moves += 1
         print("Current position: " + str(game.position))
         _, moveReward = game.move(input('What direction do you want U, D, L or R:\n').lower())
-        reward += moveReward
+        totalReward += moveReward
         gameover = game.over()
-    return reward
+    return totalReward
 
-def startValue(game, valueIterator):
+def startValue(game, valueIterator, maxMoves = 50):
     game.reset()
     gameover = False
-    reward = 0
-    while not gameover:
+    totalReward = 0
+    moves = 0
+    while not gameover and moves < maxMoves:
+        moves += 1
         _, moveReward = game.move(valueIterator.decideMove(game.position))
-        reward += moveReward
+        totalReward += moveReward
         gameover = game.over()
-    return reward
+    return totalReward
 
-def startPolicy(game, policyIterator):
+def startPolicy(game, policyIterator, maxMoves = 50):
     game.reset()
     gameover = False
-    reward = 0
-    while not gameover:
+    totalReward = 0
+    moves = 0
+    while not gameover and moves < 50:
+        moves += 1
         _, moveReward = game.move(policyIterator.decideMove(game.position))
-        reward += moveReward
+        totalReward += moveReward
         gameover = game.over()
-    return reward
+    return totalReward
 
 
 """" Setting up ValueIterator information and useful functions """
+valueRewards = []
 
 class ValueIterator:
-    def __init__(self, gamma):
-        self.policy = np.array([None for _ in range(16)])
-        self.values = np.zeros(16)
-        self.game = GridWorld()
-        self.states = range(1,15)
-        self.statesPlus = range(0,16) # Unused
+    def __init__(self, gamma, game = GridWorld()):
+        self.policy = np.array([None for _ in range(game.gridSpace)])
+        self.values = np.zeros(game.gridSpace)
+        self.game = game
+        self.states = range(1,game.gridSpace-1)
+        self.statesPlus = range(0,game.gridSpace) # Unused
         self.actions = allowedActions
         self.gamma = gamma
 
@@ -82,11 +92,13 @@ class ValueIterator:
 
     # Trains until converges
     def train(self):
+        valueRewards.append(self.currentReward())
         change = True
         while change:
             oldValues = self.values.copy()
             for state in self.states:
                 self.decideMoveWithUpdate(state)
+            valueRewards.append(self.currentReward())
             change = not (oldValues == self.values).all()
 
     
@@ -104,39 +116,38 @@ class ValueIterator:
             actionReward[a] = reward
         
         # Update the values and policies
-        self.values[state] = maxReward
+        self.values[state] = round(maxReward,4)
         self.policy[state] = [
             action for action,
             reward in actionReward.items() if reward == maxReward
             ]
 
-        return self.decideMove(state)
-
     def decideMove(self, state):
         return self.policy[state][random.randint(len(self.policy[state]))]
 
+    def currentReward(self, iter = 1000):
+        averageReward = 0
+        for _ in range(iter):
+            averageReward += startValue(self.game,self)/iter
+        return averageReward
+        
+
 def to2DList(array):
-    return [
-            array[0:4].tolist(),
-            array[4:8].tolist(),
-            array[8:12].tolist(),
-            array[12:16].tolist()
-            ]
+    return np.reshape(array,(int(np.sqrt(len(array))),int(np.sqrt(len(array))))).tolist()
 
 
 """" Setting up PolicyIterator information and useful functions """
-
+policyRewards = []
 class PolicyIterator:
-    def __init__(self, gamma, theta):
-        self.policy = np.array([None for _ in range(16)])
-        self.values = np.zeros(16)
-        self.game = GridWorld()
-        self.states = range(1,15)
-        self.statesPlus = range(0,16) # Unused
+    def __init__(self, gamma, theta, game = GridWorld()):
+        self.policy = np.array([None for _ in range(game.gridSpace)])
+        self.values = np.zeros(game.gridSpace)
+        self.game = game
+        self.states = range(1,game.gridSpace-1)
+        self.statesPlus = range(0,game.gridSpace) # Unused
         self.actions = allowedActions
         self.gamma = gamma
         self.theta = theta
-        self.rewards = {}
 
         self.initP()
 
@@ -144,11 +155,6 @@ class PolicyIterator:
         # Initialize policy 
         for i in self.states:
             self.policy[i] = self.actions.copy()
-        for state in self.states:
-            for a in self.actions:
-                self.game.position = state
-                state_, reward = self.game.move(a)
-                self.rewards[(state_, reward, state, a)] = 1
 
     def evaluatePolicy(self):
         converged = False
@@ -159,15 +165,18 @@ class PolicyIterator:
                 total = 0
                 weight = 1 / len(self.policy[state])
                 for a in self.policy[state]:
-                    for key in self.rewards:
-                        (newState, reward, oldState, action) = key
-                        if oldState == state and action == a:
-                            total += weight * self.rewards[key] * (reward + self.gamma * self.values[newState])
+                    self.game.position = state
+                    state_, reward = self.game.move(a)
+                    total += weight * (reward + self.gamma * self.values[state_])
                 self.values[state] = np.round(total, 4)
                 delta = max(delta, np.abs(oldValue - self.values[state]))
                 converged = True if delta < self.theta else False
  
+    def train(self):
+        self.improvePolicy() 
+
     def improvePolicy(self):
+        policyRewards.append(self.currentReward())
         stable = False
         while not stable:
             self.evaluatePolicy()
@@ -177,12 +186,10 @@ class PolicyIterator:
                 value = []
                 newActions = []
                 for a in self.actions:
-                    weight = 1 / len(self.policy[state])
-                    for key in self.rewards:
-                        (newState, reward, oldState, action) = key
-                        if oldState == state and action == a:
-                            value.append(weight * self.rewards[key]*(reward + self.gamma*self.values[newState]))
-                            newActions.append(a)
+                    self.game.position = state
+                    newPos, reward = self.game.move(a)
+                    value.append(reward + self.gamma*self.values[newPos])
+                    newActions.append(a)
                 value = np.array(np.round(value,5))
                 best = np.where(value == value.max())[0]
                 bestActions = [newActions[item] for item in best]
@@ -190,27 +197,49 @@ class PolicyIterator:
 
                 if oldActions != bestActions:
                     stable = False
+            policyRewards.append(self.currentReward())
                     
     def decideMove(self, state):
         return self.policy[state][random.randint(len(self.policy[state]))]
+    
+    def currentReward(self, iter = 1000):
+        averageReward = 0
+        for _ in range(iter):
+            averageReward += startPolicy(self.game,self)/iter
+        return averageReward
 
 if __name__ == "__main__":
-    game = GridWorld()
+
+    # Arrange
+    size = 13 # Length and width of the grid
+    theta = 1e-2 # Error tolerance
+    gamma = 0.9  # Discount
+    game = GridWorld(size) # game of size "size"
+
+    # Value iterator action
     print("\n_______Value Iterator______\n")
-    test = ValueIterator(0.9)
+    test = ValueIterator(gamma, game=game)
 
     print("Reward before training: " + str(startValue(game, test)))
 
     test.train()
     print("Reward after training: " + str(startValue(game, test)))
-    pprint(to2DList(test.values))
-    pprint(to2DList(test.policy))
 
+    # Policy iterator action
     print("\n_______Policy Iterator______\n")
-    pIterator = PolicyIterator(0.9, 1e-2)
+    pIterator = PolicyIterator(gamma, theta,game=game)
 
-    pIterator.improvePolicy()
-    pprint(to2DList(pIterator.values))
-    pprint(to2DList(pIterator.policy))
+    print("Reward before training: " + str(startValue(game, pIterator)))
 
+    pIterator.train()
     print("Reward after training: " + str(startValue(game, pIterator)))
+
+    # Display result
+    _, ax = plt.subplots()
+    line1 = ax.plot([round(item,1) for item in valueRewards])
+    line2 = ax.plot([round(item,3) for item in policyRewards])
+    plt.xlabel("Episode")
+    plt.ylabel("Reward")
+    plt.title("Value vs Policy iterators")
+    ax.legend(["Value","Policy"])
+    plt.show()
