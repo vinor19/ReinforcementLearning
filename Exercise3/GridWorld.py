@@ -169,33 +169,34 @@ class PolicyIterator:
                 converged = True if delta < self.theta else False
  
     def train(self):
-        self.improvePolicy() 
-
-    def improvePolicy(self):
         policyRewards.append(self.currentReward())
         stable = False
         while not stable:
             self.evaluatePolicy()
-            stable = True
-            for state in self.states:
-                oldActions = self.policy[state]
-                newActions = []
-                actionRewards = {}
-                maxReward = np.NINF
-                for a in self.actions:
-                    self.game.position = state
-                    state_, reward = self.game.move(a)
-                    reward += (reward + self.gamma * self.values[state_])
-                    maxReward = max(maxReward, reward)
-                    actionRewards[a] = reward
-
-                self.policy[state] = [
-                    action for action,
-                    reward in actionRewards.items() if reward == maxReward
-                    ]
-                if oldActions != self.policy[state]:
-                    stable = False
+            stable = self.improvePolicy()
             policyRewards.append(self.currentReward())
+
+    def improvePolicy(self):
+        stable = True
+        for state in self.states:
+            oldActions = self.policy[state]
+            newActions = []
+            actionRewards = {}
+            maxReward = np.NINF
+            for a in self.actions:
+                self.game.position = state
+                state_, reward = self.game.move(a)
+                reward += (reward + self.gamma * self.values[state_])
+                maxReward = max(maxReward, reward)
+                actionRewards[a] = reward
+
+            self.policy[state] = [
+                action for action,
+                reward in actionRewards.items() if reward == maxReward
+                ]
+            if oldActions != self.policy[state]:
+                stable = False
+        return stable
                     
     def decideMove(self, state):
         return self.policy[state][random.randint(len(self.policy[state]))]
@@ -209,7 +210,7 @@ class PolicyIterator:
 if __name__ == "__main__":
 
     # Arrange
-    size = 13 # Length and width of the grid
+    size = 7 # Length and width of the grid
     theta = 1e-2 # Error tolerance
     gamma = 0.9  # Discount
     game = GridWorld(size) # game of size "size"
