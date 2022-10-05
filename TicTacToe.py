@@ -1,7 +1,10 @@
+from queue import Empty
 import random
 import numpy as np
 import copy as cp
 import json
+import matplotlib
+from matplotlib import pyplot as plt
 
 class TicTacToe:
     def __init__(self):
@@ -51,11 +54,14 @@ def getAvailableMoves(game):
             possibilities.append(i)
     return possibilities
 
-def minimax(board, depth, alpha, beta, maximizing_player):
-    if depth == 0 or board.GameOver()[0]:
-        return 0, evaluate(board)
-
+def minimax(board, alpha, beta, maximizing_player):
     children = getAvailableMoves(board)
+    depth = len(children)-1
+    if depth == -1:
+        return 0, evaluate(board)
+    if depth == 0 or board.GameOver()[0]:
+        return children[0], evaluate(board)
+
     best_move = children[0]
 
     if maximizing_player:
@@ -63,7 +69,7 @@ def minimax(board, depth, alpha, beta, maximizing_player):
         for child in children:
             board_copy = cp.deepcopy(board)
             board_copy.move(child)
-            current_eval = minimax(board_copy, depth - 1, alpha, beta, False)[1]
+            current_eval = minimax(board_copy, alpha, beta, False)[1]
             if current_eval > max_eval:
                 max_eval = current_eval
                 best_move = child
@@ -77,7 +83,7 @@ def minimax(board, depth, alpha, beta, maximizing_player):
         for child in children:
             board_copy = cp.deepcopy(board)
             board_copy.move(child)
-            current_eval = minimax(board_copy, depth - 1, alpha, beta, True)[1]
+            current_eval = minimax(board_copy, alpha, beta, True)[1]
             if current_eval < min_eval:
                 min_eval = current_eval
                 best_move = child
@@ -109,7 +115,7 @@ def startExpert2(game):
             piecePlayed, _ = game.move(int(input('Where do you place your piece:\n'))-1)
         else:
             print(getAvailableMoves(game))
-            piece, _ = minimax(game, depth, np.NINF, np.Inf, player == 1)
+            piece, _ = minimax(game, np.NINF, np.Inf, player == 1)
             print(piece)
             piecePlayed, _ = game.move(piece)
         depth -= 1
@@ -117,51 +123,67 @@ def startExpert2(game):
         state = game.board
     return winner
 
-def startAIGame(ai, game  = TicTacToe()):
+def startAIGame(ai, game  = TicTacToe(), p = 2):
     global state
     gameover = False
     winner = 0
-    player = 2
-    depth = 8
+    player = p
     while not gameover:
         print("---------------")
         print(game.board[0:3])
         print(game.board[3:6])
         print(game.board[6:9])
         if game.CurrentPlayer == player:
-            piecePlayed = False
-            piecePlayed, _ = game.move(int(input('Where do you place your piece:\n'))-1)
+            game.move(int(input('Where do you place your piece:\n'))-1)
         else:
             # print(getAvailableMoves(game))
             piece = ai.chooseAction(game)
             print(piece)
-            piecePlayed, _ = game.move(piece)
-        depth -= 1
+            game.move(piece)
         gameover, winner = game.GameOver()
         state = game.board
     return winner
 
-def startAIGamevsExpert(ai, game  = TicTacToe()):
+def startAIvsAIGame(ai, ai2, game  = TicTacToe(), printStates = False):
     global state
+    game = game
     gameover = False
     winner = 0
-    player = 2
-    depth = 7
+    player = 1
+    while not gameover:
+        if printStates:
+            print("---------------")
+            print(game.board[0:3])
+            print(game.board[3:6])
+            print(game.board[6:9])
+        if game.CurrentPlayer == player:
+            game.move(ai.chooseAction(game))
+        else:
+            game.move(ai2.chooseAction(game))
+        gameover, winner = game.GameOver()
+        state = game.board
+    return winner
+
+def startAIGamevsExpert(ai, game  = TicTacToe(), p = 1):
+    global state
+    game = game
+    gameover = False
+    winner = 0
+    player = p
     while not gameover:
         print("---------------")
         print(game.board[0:3])
         print(game.board[3:6])
         print(game.board[6:9])
         if game.CurrentPlayer == player:
-            piece, _ = minimax(game, depth, np.NINF, np.Inf, player == 1)
-            print(piece)
-            piecePlayed, _ = game.move(piece)
+            piece, _ = minimax(game, np.NINF, np.Inf, p == 2)
+            print("Expert placed at: " + str(piece))
+
+            game.move(piece)
         else:
-            # print(getAvailableMoves(game))
             piece = ai.chooseAction(game)
-            print(piece)
-            piecePlayed, _ = game.move(piece)
-        depth -= 1
+            print("AI placed at: " + str(piece))
+            game.move(piece)
         gameover, winner = game.GameOver()
         state = game.board
     return winner
@@ -185,65 +207,161 @@ class TictactoeAI:
         self.N = N
         #Initialize Q_ø
 
-    def chooseActionTraining(self):
-        boardHash = boardToState(self.game.board)
-        if np.random.uniform(0, 1) <= self.epsilon:
-            action = random.randint(0,8)
-        else:
-            stateActionValues = self.Q_ø.get(boardHash,np.zeros(9).tolist())
-            action = np.argmax(stateActionValues)
+    def chooseActionTraining(self, game):
+        boardHash = boardToState(game.board)
+        actions = getAvailableMoves(game)
+        if actions != []:
+            if np.random.uniform(0, 1) <= self.epsilon:
+                action = random.choice(actions)
+            else:
+                stateActionValues = self.Q_ø.get(boardHash,np.zeros(9).tolist())
+                if stateActionValues == np.zeros(9).tolist():
+                    action = random.choice(actions)
+                else: 
+                    action = np.argmax(stateActionValues)
+                
             return action
+        else:
+            return 0
 
     def chooseAction(self, game):
         boardHash = boardToState(game.board)
-        value_max = np.NINF
-        
         stateActionValues = self.Q_ø.get(boardHash,np.zeros(9).tolist())
-        print(stateActionValues)
-        if stateActionValues == np.zeros(9).tolist():
-            return random.randint(0,8)
-        action = np.argmax(stateActionValues)
-        return action
+        actions = getAvailableMoves(game)
+        if actions != []:
+            if stateActionValues == np.zeros(9).tolist():
+                action = actions[0]
+            else: 
+                action = np.argmax(stateActionValues)
+            return action
+        else:
+            return 0
 
-    def learn(self, episodes):
+    def train(self,againstExpert = False,againstSelf = True, epochs = 100, episodes = 100):
+        for i in range(epochs):
+            if againstExpert:
+                self.learnvsexpert(episodes, p=1)
+                self.learnvsexpert(episodes, p=2)
+            if againstSelf:
+                self.learnvsself(episodes, p=1)
+                self.learnvsself(episodes, p=2)
+
+    def learnvsexpert(self, episodes, p = 1):
         # converged = False
         for i in range(episodes):
-            if i%100 == 0:
-                print(str(i/100)+"%")
+            # if i%100 == 0:
+            #     print(str(i/episodes*100)+"%")
             game = cp.deepcopy(self.game)
+            if (p == 2):
+                game.move(minimax(game, np.NINF, np.Inf, p==2)[0])
             while not game.GameOver()[0]:
                 action0 = None
                 state0 = None
+                actionOpponent = None
                 giN = 0
                 nextgamestate = cp.deepcopy(game)
                 for i in range(0,self.N):
-                    action = self.chooseActionTraining()
+                    action = self.chooseActionTraining(nextgamestate)
+                    reward1, _ = nextgamestate.move(action)
+                    actionExpert, _ = minimax(nextgamestate, np.NINF, np.Inf, p==2)
+                    reward2, _ = nextgamestate.move(actionExpert)
                     if i == 0:
                         action0 = action
+                        actionOpponent = actionExpert
                         state0 = boardToState(game.board)
                         self.Q_ø[boardToState(state0)] = self.Q_ø.get(boardToState(game.board),np.zeros(9).tolist())
-                    reward1, _ = nextgamestate.move(action)
-                    actionExpert, _ = minimax(nextgamestate, 9-nextgamestate.piecesPlayed, np.NINF, np.Inf, game.CurrentPlayer == 1)
-                    reward2, _ = nextgamestate.move(actionExpert)
                     giN += self.gamma**i * (reward1-reward2)
-                #Initialize new state if needed
                 newValue = (
                     (1-self.lr) * self.Q_ø[boardToState(state0)][action0] + 
                     self.lr*((giN) + self.gamma**self.N * max(self.Q_ø.get(boardToState(nextgamestate.board),np.zeros(9).tolist())) - self.Q_ø[boardToState(state0)][action0])
                     )
                 self.Q_ø[boardToState(state0)][action0] = newValue
-                game = nextgamestate
+                game.move(action0)
+                game.move(actionOpponent)
+        # print("100%")
 
-                
-ai = TictactoeAI(N=3)
+    def learnvsself(self, episodes, p = 1):
+        # converged = False
+        for i in range(episodes):
+            # if i%1000 == 0:
+            #     print(str(i/episodes*100)+"%")
+            game = cp.deepcopy(self.game)
+            if (p == 2):
+                game.move(self.chooseAction(game))
+            while not game.GameOver()[0]:
+                action0 = None
+                state0 = None
+                actionOpponent = None
+                giN = 0
+                nextgamestate = cp.deepcopy(game)
+                for i in range(0,self.N):
+                    action = self.chooseActionTraining(nextgamestate)
+                    reward1, _ = nextgamestate.move(action)
+                    actionOldVersion = self.chooseAction(nextgamestate)
+                    reward2, _ = nextgamestate.move(actionOldVersion)
+                    if i == 0:
+                        action0 = action
+                        actionOpponent = actionOldVersion
+                        state0 = boardToState(game.board)
+                        self.Q_ø[boardToState(state0)] = self.Q_ø.get(boardToState(game.board),np.zeros(9).tolist())
+                    giN += self.gamma**i * (reward1-reward2)
+                newValue = (
+                    (1-self.lr) * self.Q_ø[boardToState(state0)][action0] + 
+                    self.lr*((giN) + self.gamma**self.N * max(self.Q_ø.get(boardToState(nextgamestate.board),np.zeros(9).tolist())) - self.Q_ø[boardToState(state0)][action0])
+                    )
+                self.Q_ø[boardToState(state0)][action0] = newValue
+                game.move(action0)
+                game.move(actionOpponent)
+        # print("100%")
+        
+aivsexpert = TictactoeAI(N=3, lr=0.01)
+aivsself = TictactoeAI(N=3, lr=0.01)
 
-# ai.learn(10000)
+
 # f = open("AI.json","w")
 # json.dump(ai.Q_ø, f)
 # f.close()
-f = open("AI.json","r")
-ai.Q_ø = json.load(f)
-f.close()
-
-print(startAIGamevsExpert(ai))
-
+# f = open("AI.json","r")
+# f.close()
+# print(len(ai.Q_ø.keys()))
+scoresSelf = []
+scoresExpert = []
+for i in range(500):
+    Wins = [0,0]
+    aivsexpert.train(againstExpert = True, againstSelf = False, epoch = 1, episodes=5)
+    aivsself.train(epochs=5, episodes=1)
+    for j in range(1):
+        nextgame = TicTacToe()
+        winner = startAIvsAIGame(aivsexpert, aivsself, game=nextgame)
+        if winner == 2:
+            Wins[1] += 1
+        elif winner == 1:
+            Wins[0] +=1
+    for j in range(1):
+        nextgame = TicTacToe()
+        winner = startAIvsAIGame(aivsself, aivsexpert, game=nextgame)
+        if winner == 1:
+            Wins[1] += 1
+        elif winner == 2:
+            Wins[0] +=1
+    scoresExpert.append(Wins[0])
+    scoresSelf.append(Wins[1])
+    if i%50 == 50:
+        _, ax = plt.subplots()
+        line1 = ax.plot(scoresExpert)
+        line2 = ax.plot(scoresSelf)
+        plt.xlabel("per 5 Epoch")
+        plt.ylabel("Wins")
+        plt.title("Training methods")
+        ax.legend(["Expert Training","Self training"])
+        plt.show()
+        print(scoresExpert,scoresSelf)
+_, ax = plt.subplots()
+line1 = ax.plot(scoresExpert)
+line2 = ax.plot(scoresSelf)
+plt.xlabel("per 5 Epoch")
+plt.ylabel("Wins")
+plt.title("Training methods")
+ax.legend(["Expert Training","Self training"])
+plt.show()
+print(Wins)
