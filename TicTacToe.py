@@ -3,10 +3,9 @@ import numpy as np
 import json
 import matplotlib
 from matplotlib import pyplot as plt
-from multiprocessing import Pool
+from multiprocessing import Pool, cpu_count
 import time
 import pickle
-import cProfile
 
 class TicTacToe:
     def __init__(self):
@@ -76,11 +75,11 @@ class TicTacToe:
     def GetReward(self,p):
         if self.over:
             if self.winner == 0:
-                return 5
+                return -5
             if self.winner == p:
-                return 10
-            if self.winner != p:
                 return -10
+            if self.winner != p:
+                return 10
         else:
             return 0
             
@@ -152,24 +151,22 @@ class TictactoeAI:
         return newai
 
     def chooseActionTraining(self, game):
-        boardHash = boardToState(game.board)
         actions = getAvailableMoves(game)
         if actions != []:
-            if np.random.uniform(0, 1) <= self.epsilon:
+            if random.uniform(0, 1) <= self.epsilon:
                 action = random.choice(actions)
             else:
-                stateActionValues = [self.Q_ø.setdefault(boardHash,np.zeros(9))[move] for move in actions]
-                action = actions[np.argmax(stateActionValues)]
+                stateActionValues = [self.Q_ø.setdefault(boardToState(game.board),np.zeros(9))[move] for move in actions]
+                action = actions[np.argmin(stateActionValues)]
             return action
         else:
             return 0
 
     def chooseAction(self, game):
-        boardHash = boardToState(game.board)
         actions = getAvailableMoves(game)
-        stateActionValues = [self.Q_ø.setdefault(boardHash,np.zeros(9))[move] for move in actions]
         if actions != []:
-            action = actions[np.argmax(stateActionValues)]
+            stateActionValues = [self.Q_ø.setdefault(boardToState(game.board),np.zeros(9))[move] for move in actions]
+            action = actions[np.argmin(stateActionValues)]
             return action
         else:
             return 0
@@ -224,7 +221,7 @@ class TictactoeAI:
                 
                 newValue = (
                     (1-self.lr) * self.Q_ø[state0][action0] + 
-                    self.lr*((giN) + self.gamma**(i+1) * max(self.Q_ø.setdefault(boardToState(nextgamestate.board),np.zeros(9))))
+                    self.lr*((giN) + self.gamma**(i+1) * min(self.Q_ø.setdefault(boardToState(nextgamestate.board),np.zeros(9))))
                     )
                 self.Q_ø[state0][action0] = newValue
                 self.game.move(action0)
@@ -273,7 +270,7 @@ class TictactoeAI:
                 
                 newValue = (
                     (1-self.lr) * self.Q_ø[state0][action0] + 
-                    self.lr*((giN) + self.gamma**(i+1) * max(self.Q_ø.setdefault(boardToState(nextgamestate.board),np.zeros(9))))
+                    self.lr*((giN) + self.gamma**(i+1) * min(self.Q_ø.setdefault(boardToState(nextgamestate.board),np.zeros(9))))
                     )
                 self.Q_ø[state0][action0] = newValue
                 self.game.move(action0)
@@ -358,51 +355,83 @@ def testTrainingRewardsReturnedExpert(ai, rounds, tests):
     for j in range(tests):
         ai.reset()
         scores.append(ai.train(againstExpert = True,againstSelf = False, epochs=rounds, episodes=5))
-        if j%10 == 9:
-            print(ai.epsilon, ai.N, str(j+1)+"%")
+        if j%(tests/10) == tests/10-1:
+            print(ai.epsilon, ai.N, str((j+1)/tests*100)+"%")
     print(ai.epsilon, ai.N, "Done")
     return (scores, ai.epsilon, ai.N)
 
 colors = ['cyan','aquamarine','blue','yellow','orange','red','lime','green','darkgreen']
+
+def multiprocessingMain(aiList, rounds, tests):
+    with Pool(cpu_count()-1) as p:
+        start_time = time.time()
+        result = p.starmap(
+            testTrainingRewardsReturnedExpert, 
+            [( aiList[i], rounds,tests) 
+                for i in range(len(aiList))
+            ])
+        _, ax = plt.subplots()
+        labels = []
+        for i in range(len(result)):
+            mean = np.array(result[i][0]).mean(axis=0)
+            std = np.array(result[i][0]).std(axis=0)/np.sqrt(tests)
+            ax.plot(range(0,rounds),mean, color=colors[i])
+            ax.fill_between(range(0,rounds),mean+std, mean-std, facecolor=colors[i], alpha=0.1)
+            labels.append("N"+str(result[i][2])+"E"+str((result[i][1])))
+
+        with open("test1", "wb") as fp:
+            pickle.dump(result, fp)
+
+        plt.xlabel("Epochs trained")
+        plt.ylabel("Costs")
+        plt.title("Training methods")
+        ax.legend(labels)
+        print("--- %s seconds ---" % (time.time() - start_time))
+        plt.savefig('learning-curve.png')
+        plt.show()
+
+def Main(aiList, rounds, tests):
+    start_time = time.time()
+    rounds = 200
+    tests = 10
     
+    result = []
+    for i in range(len(aiList)):
+        result.append(testTrainingRewardsReturnedExpert( aiList[i], rounds,tests))
+    _, ax = plt.subplots()
+    labels = []
+    for i in range(len(result)):
+        mean = np.array(result[i][0]).mean(axis=0)
+        std = np.array(result[i][0]).std(axis=0)/np.sqrt(tests)
+        ax.plot(range(0,rounds),mean, color=colors[i])
+        ax.fill_between(range(0,rounds),mean+std, mean-std, facecolor=colors[i], alpha=0.1)
+        labels.append("N"+str(result[i][2])+"E"+str((result[i][1])))
+
+    with open("test1", "wb") as fp:
+        pickle.dump(result, fp)
+
+    plt.xlabel("Epochs trained")
+    plt.ylabel("Costs")
+    plt.title("Training methods")
+    ax.legend(labels)
+    print("--- %s seconds ---" % (time.time() - start_time))
+    plt.savefig('learning-curve.png')
+    plt.show()
+
 if __name__ == '__main__':
-    # cProfile.run("actuallyDoesTheWork()", sort="tottime")
-    with Pool(9) as p:
-            start_time = time.time()
-            rounds = 1000
-            tests = 100
-            aiList = [
-                TictactoeAI(epsilon = 0.1, N=1, gamma=0.9, lr=0.05),
-                TictactoeAI(epsilon = 0.1, N=2, gamma=0.9, lr=0.05),
-                TictactoeAI(epsilon = 0.1, N=3, gamma=0.9, lr=0.05),
-                TictactoeAI(epsilon = 0.2, N=1, gamma=0.9, lr=0.05),
-                TictactoeAI(epsilon = 0.2, N=2, gamma=0.9, lr=0.05),
-                TictactoeAI(epsilon = 0.2, N=3, gamma=0.9, lr=0.05),
-                TictactoeAI(N=1, gamma=0.9, lr=0.05),
-                TictactoeAI(N=2, gamma=0.9, lr=0.05),
-                TictactoeAI(N=3, gamma=0.9, lr=0.05)
+    random.seed(42)
+    rounds = 2000
+    tests = 100
+    aiList = [
+                TictactoeAI(epsilon = 0.1, N=1, gamma=0.8, lr=0.001),
+                TictactoeAI(epsilon = 0.1, N=2, gamma=0.8, lr=0.001),
+                TictactoeAI(epsilon = 0.1, N=3, gamma=0.8, lr=0.001),
+                TictactoeAI(epsilon = 0.2, N=1, gamma=0.8, lr=0.001),
+                TictactoeAI(epsilon = 0.2, N=2, gamma=0.8, lr=0.001),
+                TictactoeAI(epsilon = 0.2, N=3, gamma=0.8, lr=0.001),
+                TictactoeAI(N=1, gamma=0.9, lr=0.001),
+                TictactoeAI(N=2, gamma=0.9, lr=0.001),
+                TictactoeAI(N=3, gamma=0.9, lr=0.001)
             ]
-            result = p.starmap(
-                testTrainingRewardsReturnedExpert, 
-                [( aiList[i], rounds,tests) 
-                    for i in range(len(aiList))
-                ])
-            _, ax = plt.subplots()
-            labels = []
-            for i in range(len(result)):
-                mean = np.array(result[i][0]).mean(axis=0)
-                std = np.array(result[i][0]).std(axis=0)/np.sqrt(tests)
-                ax.plot(range(0,rounds),mean, color=colors[i])
-                ax.fill_between(range(0,rounds),mean+std, mean-std, facecolor=colors[i], alpha=0.1)
-                labels.append("N"+str(result[i][2])+"E"+str((result[i][1])))
-
-            with open("test1", "wb") as fp:
-                pickle.dump(result, fp)
-
-            plt.xlabel("Games played")
-            plt.ylabel("Scores")
-            plt.title("Training methods")
-            ax.legend(labels)
-            print("--- %s seconds ---" % (time.time() - start_time))
-            plt.show()
-            plt.savefig('100tests500000trainingoneachside.png')
+    multiprocessingMain(aiList, rounds, tests)
+    
