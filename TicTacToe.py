@@ -6,6 +6,7 @@ import json
 import matplotlib
 from matplotlib import pyplot as plt
 from multiprocessing import Process
+matplotlib.use('TkAgg')
 
 class TicTacToe:
     def __init__(self):
@@ -302,9 +303,11 @@ class TictactoeAI:
                         state0 = boardToState(game.board)
                         self.Q_ø[boardToState(state0)] = self.Q_ø.get(boardToState(game.board),np.zeros(9).tolist())
                     giN += self.gamma**i * (reward1-reward2)
+                    if nextgamestate.GameOver()[0]:
+                        break
                 newValue = (
                     (1-self.lr) * self.Q_ø[boardToState(state0)][action0] + 
-                    self.lr*((giN) + self.gamma**self.N * max(self.Q_ø.get(boardToState(nextgamestate.board),np.zeros(9).tolist())) - self.Q_ø[boardToState(state0)][action0])
+                    self.lr*((giN) + self.gamma**(i) * max(self.Q_ø.get(boardToState(nextgamestate.board),np.zeros(9).tolist())))
                     )
                 self.Q_ø[boardToState(state0)][action0] = newValue
                 game.move(action0)
@@ -434,8 +437,8 @@ def testTraining(ai, scores: list, rounds, tests):
 
 
 if __name__ == '__main__':
-    rounds = 500
-    tests = 5
+    rounds = 100
+    tests = 100
     scoresN1 = np.zeros(rounds).tolist()
     scoresN2 = np.zeros(rounds).tolist()
     scoresN3 = np.zeros(rounds).tolist()
@@ -456,14 +459,23 @@ if __name__ == '__main__':
     testTraining(aivsn3, scoresN3, rounds=rounds, tests=tests)
     _, ax = plt.subplots()
     # line1 = ax.plot(scoresExpert)
-    line2 = ax.plot(scoresN1)
+    episodes = np.array(range(1,1+len(scoresN1)))
+    # coefs1 = np.polynomial.polynomial.polyfit(episodes,scoresN1,1)
+    # coefs2 = np.polynomial.polynomial.polyfit(episodes,scoresN2,1)
+    # coefs3 = np.polynomial.polynomial.polyfit(episodes,scoresN3,1)
+
+    # line1 = ax.plot(np.polynomial.polynomial.polyval(episodes,coefs1))
+    # line2 = ax.plot(np.polynomial.polynomial.polyval(episodes,coefs2))
+    # line3 = ax.plot(np.polynomial.polynomial.polyval(episodes,coefs3))
+
+    line1 = ax.plot(scoresN1)
     line2 = ax.plot(scoresN2)
-    line2 = ax.plot(scoresN3)
+    line3 = ax.plot(scoresN3)
     # line3 = ax.plot(draws)
     plt.xlabel("per 5 Epoch of 5 training games")
     plt.ylabel("Wins")
     plt.title("Training methods")
     ax.legend(["ScoreN1","ScoreN2","ScoreN3"])
     # plt.show()
-    plt.savefig('foo.png')
+    plt.savefig('foo1.png')
 
