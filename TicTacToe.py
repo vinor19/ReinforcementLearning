@@ -7,6 +7,8 @@ from multiprocessing import Pool, cpu_count
 import time
 import pickle
 
+matplotlib.use("TkAgg")
+
 class TicTacToe:
     def __init__(self):
         self.board = [0,0,0,0,0,0,0,0,0]
@@ -42,44 +44,43 @@ class TicTacToe:
         self.piecesPlayed += 1
         self.CurrentPlayer = 1 if player == 2 else 2
         if self.piecesPlayed>4:
-            self.GameOver() 
-        return True, self.GetReward(player)
-    
+            self.GameOver()
+        return True, 0
+
+    def BoardOver(self,board):
+        for i in range(3):
+            if (board[i*3] != 0 and board[i*3] == board[i*3+1] and board[i*3+1] == board[i*3+2]):
+                winner = board[i*3]
+                return (True, winner)
+        for i in range(3):
+            if (board[i] != 0 and board[i] == board[i+3] and board[i+3] == board[i+6]):
+                winner = board[i]
+                return (True, winner)
+        if (board[0] != 0 and board[0] == board[4] and board[4] == board[8]):
+            winner = board[0]
+            return (True, board[0])
+        if (board[2] != 0 and board[2] == board[4] and board[4] == board[6]):
+            winner = board[2]
+            return (True, board[2])
+        
+        if(board.count(0) == 0):
+            return(True, 0)
+        return (False,0)
+
     def GameOver(self):
         if not self.over:
-            for i in range(3):
-                if (self.board[i*3] != 0 and self.board[i*3] == self.board[i*3+1] and self.board[i*3+1] == self.board[i*3+2]):
-                    self.over = True
-                    self.winner = self.board[i*3]
-                    return (True, self.winner)
-            for i in range(3):
-                if (self.board[i] != 0 and self.board[i] == self.board[i+3] and self.board[i+3] == self.board[i+6]):
-                    self.over = True
-                    self.winner = self.board[i]
-                    return (True, self.winner)
-            if (self.board[0] != 0 and self.board[0] == self.board[4] and self.board[4] == self.board[8]):
-                self.over = True
-                self.winner = self.board[0]
-                return (True, self.board[0])
-            if (self.board[2] != 0 and self.board[2] == self.board[4] and self.board[4] == self.board[6]):
-                self.over = True
-                self.winner = self.board[2]
-                return (True, self.board[2])
-            
-            if(self.piecesPlayed >=9):
-                self.over = True
-                return(True, 0)
-            return (False,0)
+            self.over, self.winner = self.BoardOver(self.board)
+            return self.over, self.winner
         return (True,self.winner)
 
-    def GetReward(self,p):
+    def GetCost(self,p):
         if self.over:
             if self.winner == 0:
-                return -5
+                return -0.1
             if self.winner == p:
-                return -10
+                return -1
             if self.winner != p:
-                return 10
+                return 1
         else:
             return 0
             
@@ -168,7 +169,7 @@ class TictactoeAI:
             stateActionValues = [self.Q_ø.setdefault(boardToState(game.board),np.zeros(9))[move] for move in actions]
             action = actions[np.argmin(stateActionValues)]
             return action
-        else:
+        else: # Actions empty
             return 0
 
     def train(self,againstExpert = False, againstSelf = False, epochs:int = 100, episodes = 100):
@@ -185,7 +186,7 @@ class TictactoeAI:
         return sumReward
         
 
-    def learnvsexpert(self, episodes, p = 1):
+    def learnvsexpert(self, episodes, p):
         rewardSum = 0
         for i in range(episodes):
             self.game.reset()
@@ -194,38 +195,30 @@ class TictactoeAI:
             while not self.game.over:
                 action0 = None
                 state0 = None
-                actionOpponent = None
                 giN = 0
                 nextgamestate = self.game.copy()
-                for i in range(0,self.N):
-                    action = self.chooseActionTraining(nextgamestate)
-                    nextgamestate.move(action)
-                    actionOther = mathMoves[mathExpert.get(toState(nextgamestate.board),"NE")]
-                    nextgamestate.move(actionOther)
+                for i in range(self.N):
+                    action= self.chooseActionTraining(nextgamestate)
+                    _, cost = nextgamestate.move(action)
+                    nextgamestate.move(mathMoves[mathExpert.get(toState(nextgamestate.board),"NE")])
 
                     #Save state0 and action0
                     if i == 0:
                         action0 = action
-                        actionOpponent = actionOther
                         state0 = boardToState(self.game.board)
-                        self.Q_ø.setdefault(state0,np.zeros(9))
-
-                    # reward = nextgamestate.GetReward(p)
-
-                    #Summing rewards
-                    # giN += self.gamma**(i+1) * reward 
-                    
+                        
+                    giN += np.power(self.gamma,i) * cost
                     if nextgamestate.over:
-                        self.Q_ø.setdefault(boardToState(nextgamestate.board),np.full(9,nextgamestate.GetReward(p)))
+                        self.Q_ø.setdefault(boardToState(nextgamestate.board),np.full(9,nextgamestate.GetCost(p)))
                         break #Reached a terminal state
                 
                 newValue = (
-                    (1-self.lr) * self.Q_ø[state0][action0] + 
-                    self.lr*((giN) + self.gamma**(i+1) * min(self.Q_ø.setdefault(boardToState(nextgamestate.board),np.zeros(9))))
+                    (1-self.lr) * self.Q_ø.setdefault(state0,np.zeros(9))[action0] + 
+                    self.lr*((giN) + np.power(self.gamma,(i+1)) * min(self.Q_ø.setdefault(boardToState(nextgamestate.board),np.zeros(9))))
                     )
                 self.Q_ø[state0][action0] = newValue
-                self.game.move(action0)
-                self.game.move(actionOpponent)
+                self.game.move(self.chooseActionTraining(self.game))
+                self.game.move(mathMoves[mathExpert.get(toState(self.game.board),"NE")])
             winner, _ = startAIGamevsMATH(self, game  = TicTacToe(), p = p, doPrint = False)
             if winner == p:
                 rewardSum -=2
@@ -235,7 +228,7 @@ class TictactoeAI:
                 rewardSum += 2
         return rewardSum
 
-    def learnvsself(self, episodes, p = 1):
+    def learnvsself(self, episodes, p):
         rewardSum = 0
         for i in range(episodes):
             self.game.reset()
@@ -244,37 +237,31 @@ class TictactoeAI:
             while not self.game.over:
                 action0 = None
                 state0 = None
-                actionOpponent = None
                 giN = 0
                 nextgamestate = self.game.copy()
                 for i in range(0,self.N):
                     action = self.chooseActionTraining(nextgamestate)
-                    nextgamestate.move(action)
-                    actionOther = self.chooseAction(nextgamestate)
-                    nextgamestate.move(actionOther)
+                    _, cost = nextgamestate.move(action)
+                    nextgamestate.move(self.chooseAction(self.game))
 
-                    # reward = nextgamestate.GetReward(p)
                     #Save state0 and action0
                     if i == 0:
                         action0 = action
-                        actionOpponent = actionOther
                         state0 = boardToState(self.game.board)
-                        self.Q_ø.setdefault(state0,np.zeros(9))
-                    #Summing rewards
-                    # giN += self.gamma**(i+1) * reward 
                     
-                    
+                    giN += np.power(self.gamma,i) * cost
+
                     if nextgamestate.over:
-                        self.Q_ø.setdefault(boardToState(nextgamestate.board),np.full(9,nextgamestate.GetReward(p)))
+                        self.Q_ø.setdefault(boardToState(nextgamestate.board),np.full(9,nextgamestate.GetCost(p)))
                         break #Reached a terminal state
                 
                 newValue = (
-                    (1-self.lr) * self.Q_ø[state0][action0] + 
-                    self.lr*((giN) + self.gamma**(i+1) * min(self.Q_ø.setdefault(boardToState(nextgamestate.board),np.zeros(9))))
+                    (1-self.lr) * self.Q_ø.setdefault(state0,np.zeros(9))[action0] + 
+                    self.lr*((giN) + np.power(self.gamma,(i+1)) * min(self.Q_ø.setdefault(boardToState(nextgamestate.board),np.zeros(9))))
                     )
                 self.Q_ø[state0][action0] = newValue
-                self.game.move(action0)
-                self.game.move(actionOpponent)
+                self.game.move(self.chooseActionTraining(self.game))
+                self.game.move(self.chooseAction(self.game))
             winner, _ = startAIGamevsMATH(self, game  = TicTacToe(), p = p, doPrint = False)
             if winner == p:
                 rewardSum -=2
@@ -282,8 +269,7 @@ class TictactoeAI:
                 rewardSum += 0
             else:
                 rewardSum += 2
-        return rewardSum
-        
+        return rewardSum        
 """ MATHIAS EXPERT """
 f = open("MathExpert.json","r")
 mathExpert = json.load(f)
@@ -340,13 +326,15 @@ def toState(board: list) -> int:
 
 mathMoves = {"NW": 0, "N": 1, "NE": 2, "W":3, "C": 4, "E": 5, "SW": 6, "S": 7, "SE": 8}
 
-def testTrainingRewardsReturned(ai, rounds, tests):
+""" TRAINING SCRIPTS """
+
+def testTrainingRewardsReturned(ai:TictactoeAI, rounds, tests):
     scores = []
     for j in range(tests):
         ai.reset()
         scores.append(ai.train(againstSelf = True, epochs=rounds, episodes=5))
-        if j%10 == 9:
-            print(ai.epsilon, ai.N, str(j+1)+"%")
+        if j%(tests/10) == tests/10-1:
+            print(ai.epsilon, ai.N, str((j+1)/tests*100)+"%")
     print(ai.epsilon, ai.N, "Done")
     return (scores, ai.epsilon, ai.N)
 
@@ -360,7 +348,7 @@ def testTrainingRewardsReturnedExpert(ai, rounds, tests):
     print(ai.epsilon, ai.N, "Done")
     return (scores, ai.epsilon, ai.N)
 
-colors = ['cyan','aquamarine','blue','yellow','orange','red','lime','green','darkgreen']
+colors = [(0,0,1),(0,0,0.5),(0,0,0.3),(1,0,0),(0.5,0,0),(0.3,0,0),(0,1,0),(0,0.5,0),(0,0.3,0)]
 
 def multiprocessingMain(aiList, rounds, tests):
     with Pool(cpu_count()-1) as p:
@@ -374,10 +362,11 @@ def multiprocessingMain(aiList, rounds, tests):
         labels = []
         for i in range(len(result)):
             mean = np.array(result[i][0]).mean(axis=0)
-            std = np.array(result[i][0]).std(axis=0)/np.sqrt(tests)
+            ste = np.array(result[i][0]).std(axis=0)/np.sqrt(tests)
             ax.plot(range(0,rounds),mean, color=colors[i])
-            ax.fill_between(range(0,rounds),mean+std, mean-std, facecolor=colors[i], alpha=0.1)
+            ax.fill_between(range(0,rounds),mean+ste, mean-ste, facecolor=colors[i], alpha=0.1)
             labels.append("N"+str(result[i][2])+"E"+str((result[i][1])))
+            print("N"+str(result[i][2])+"E"+str((result[i][1])), colors[i])
 
         with open("test1", "wb") as fp:
             pickle.dump(result, fp)
@@ -392,9 +381,7 @@ def multiprocessingMain(aiList, rounds, tests):
 
 def Main(aiList, rounds, tests):
     start_time = time.time()
-    rounds = 200
-    tests = 10
-    
+    random.seed(42)
     result = []
     for i in range(len(aiList)):
         result.append(testTrainingRewardsReturnedExpert( aiList[i], rounds,tests))
@@ -419,19 +406,12 @@ def Main(aiList, rounds, tests):
     plt.show()
 
 if __name__ == '__main__':
-    random.seed(42)
-    rounds = 2000
-    tests = 100
-    aiList = [
-                TictactoeAI(epsilon = 0.1, N=1, gamma=0.8, lr=0.001),
-                TictactoeAI(epsilon = 0.1, N=2, gamma=0.8, lr=0.001),
-                TictactoeAI(epsilon = 0.1, N=3, gamma=0.8, lr=0.001),
-                TictactoeAI(epsilon = 0.2, N=1, gamma=0.8, lr=0.001),
-                TictactoeAI(epsilon = 0.2, N=2, gamma=0.8, lr=0.001),
-                TictactoeAI(epsilon = 0.2, N=3, gamma=0.8, lr=0.001),
-                TictactoeAI(N=1, gamma=0.9, lr=0.001),
-                TictactoeAI(N=2, gamma=0.9, lr=0.001),
-                TictactoeAI(N=3, gamma=0.9, lr=0.001)
-            ]
+    rounds = 200
+    tests = 50
+    lr = 0.01
+    gamma = 0.85
+    epsilonValues = [0.1,0.2,0.3]
+    NValues = [2,3,4]
+    aiList = [TictactoeAI(epsilon = E, N=N, gamma=gamma, lr=lr) for E in epsilonValues for N in NValues]
     multiprocessingMain(aiList, rounds, tests)
     
