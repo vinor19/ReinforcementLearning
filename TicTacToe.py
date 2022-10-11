@@ -152,8 +152,8 @@ class TictactoeAI:
     def chooseActionTraining(self, game):
         actions = getAvailableMoves(game)
         if actions != []:
-            if random.uniform(0, 1) <= self.epsilon:
-                action = random.choice(actions)
+            if np.random.uniform(0, 1) <= self.epsilon:
+                action = np.random.choice(actions)
             else:
                 stateActionValues = [self.Q_ø.setdefault(boardToState(game.board),np.zeros(9))[move] for move in actions]
                 action = actions[np.argmin(stateActionValues)]
@@ -381,6 +381,7 @@ def multiprocessingMain(aiList, rounds, tests):
         plt.show()
 
 def Main(aiList, rounds, tests):
+    random.seed(42)
     start_time = time.time()
     
     result = []
@@ -407,9 +408,9 @@ def Main(aiList, rounds, tests):
     plt.show()
 
 if __name__ == '__main__':
-    random.seed(42)
-    rounds = 400
-    tests = 100
+    # random.seed(42)
+    rounds = 100
+    tests = 800
     eList = [0.1,0.2,0.3]
     NList = [1,2,3]
     aiList = [
