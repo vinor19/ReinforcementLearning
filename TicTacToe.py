@@ -43,7 +43,7 @@ class TicTacToe:
         self.CurrentPlayer = 1 if player == 2 else 2
         if self.piecesPlayed>4:
             self.GameOver() 
-        return True, self.GetReward(player)
+        return True, self.getCost(player)
     
     def GameOver(self):
         if not self.over:
@@ -72,14 +72,14 @@ class TicTacToe:
             return (False,0)
         return (True,self.winner)
 
-    def GetReward(self,p):
+    def getCost(self,p):
         if self.over:
             if self.winner == 0:
-                return -5
+                return -0.1
             if self.winner == p:
-                return -10
+                return -1
             if self.winner != p:
-                return 10
+                return 1
         else:
             return 0
             
@@ -133,9 +133,8 @@ def startAIvsAIGame(ai, ai2, game  = TicTacToe(), printStates = False):
 
 
 class TictactoeAI:
-    def __init__(self, gamma = 0.9, theta = 0.01, game = TicTacToe(), lr = 0.2, epsilon = 0.3, N = 1):
+    def __init__(self, gamma = 0.9, theta = 0.01, game = TicTacToe(), epsilon = 0.3, N = 1):
         self.Q_ø = {}
-        self.lr = lr
         self.epsilon = epsilon
         self.gamma = gamma
         self.theta = theta
@@ -146,7 +145,7 @@ class TictactoeAI:
         self.Q_ø = {}
 
     def copy(self):
-        newai = TictactoeAI(self.gamma, self.theta, self.game.copy(), self.lr, self.epsilon, self.N)
+        newai = TictactoeAI(self.gamma, self.theta, self.game.copy(), self.epsilon, self.N)
         newai.Q_ø = self.Q_ø.copy()
         return newai
 
@@ -162,7 +161,7 @@ class TictactoeAI:
         else:
             return 0
 
-    def chooseAction(self, game):
+    def chooseAction(self, game: TicTacToe):
         actions = getAvailableMoves(game)
         if actions != []:
             stateActionValues = [self.Q_ø.setdefault(boardToState(game.board),np.zeros(9))[move] for move in actions]
@@ -172,21 +171,21 @@ class TictactoeAI:
             return 0
 
     def train(self,againstExpert = False, againstSelf = False, epochs:int = 100, episodes = 100):
-        sumReward = np.zeros(epochs)
+        costSum = np.zeros(epochs)
         for i in range(epochs):
-            reward = 0
+            cost = 0
             if againstExpert:
-                reward += self.learnvsexpert(episodes, p=1)
-                reward += self.learnvsexpert(episodes, p=2)
+                cost += self.learnvsexpert(episodes, p=1)
+                cost += self.learnvsexpert(episodes, p=2)
             if againstSelf:
-                reward += self.learnvsself(episodes, p=1)
-                reward += self.learnvsself(episodes, p=2)
-            sumReward[i]+=reward
-        return sumReward
+                cost += self.learnvsself(episodes, p=1)
+                cost += self.learnvsself(episodes, p=2)
+            costSum[i]+=cost
+        return costSum
         
 
     def learnvsexpert(self, episodes, p = 1):
-        rewardSum = 0
+        costSum = 0
         for i in range(episodes):
             self.game.reset()
             if (p == 2):
@@ -194,49 +193,44 @@ class TictactoeAI:
             while not self.game.over:
                 action0 = None
                 state0 = None
-                actionOpponent = None
                 giN = 0
                 nextgamestate = self.game.copy()
                 for i in range(0,self.N):
                     action = self.chooseActionTraining(nextgamestate)
                     nextgamestate.move(action)
-                    actionOther = mathMoves[mathExpert.get(toState(nextgamestate.board),"NE")]
-                    nextgamestate.move(actionOther)
+                    nextgamestate.move(mathMoves[mathExpert.get(toState(nextgamestate.board),"NE")])
 
                     #Save state0 and action0
                     if i == 0:
                         action0 = action
-                        actionOpponent = actionOther
                         state0 = boardToState(self.game.board)
                         self.Q_ø.setdefault(state0,np.zeros(9))
 
-                    # reward = nextgamestate.GetReward(p)
-
-                    #Summing rewards
-                    # giN += self.gamma**(i+1) * reward 
+                    #Summing cost
+                    giN += np.power(self.gamma,i) * nextgamestate.getCost(p)
                     
                     if nextgamestate.over:
-                        self.Q_ø.setdefault(boardToState(nextgamestate.board),np.full(9,nextgamestate.GetReward(p)))
+                        self.Q_ø.setdefault(boardToState(nextgamestate),np.full(9,nextgamestate.getCost(p)))
                         break #Reached a terminal state
                 
                 newValue = (
-                    (1-self.lr) * self.Q_ø[state0][action0] + 
-                    self.lr*((giN) + self.gamma**(i+1) * min(self.Q_ø.setdefault(boardToState(nextgamestate.board),np.zeros(9))))
+                    (1-self.gamma) * self.Q_ø[state0][action0] + 
+                    (self.gamma) * ((giN) + np.power(self.gamma,i+1) * min(self.Q_ø.setdefault(boardToState(nextgamestate),np.zeros(9))))
                     )
                 self.Q_ø[state0][action0] = newValue
                 self.game.move(action0)
-                self.game.move(actionOpponent)
+                self.game.move(mathMoves[mathExpert.get(toState(self.game.board),"NE")])
             winner, _ = startAIGamevsMATH(self, game  = TicTacToe(), p = p, doPrint = False)
             if winner == p:
-                rewardSum -=2
+                costSum -=2
             elif winner == 0:
-                rewardSum += 0
+                costSum += 0
             else:
-                rewardSum += 2
-        return rewardSum
+                costSum += 2
+        return costSum
 
     def learnvsself(self, episodes, p = 1):
-        rewardSum = 0
+        costSum = 0
         for i in range(episodes):
             self.game.reset()
             if (p == 2):
@@ -244,45 +238,41 @@ class TictactoeAI:
             while not self.game.over:
                 action0 = None
                 state0 = None
-                actionOpponent = None
                 giN = 0
                 nextgamestate = self.game.copy()
                 for i in range(0,self.N):
                     action = self.chooseActionTraining(nextgamestate)
                     nextgamestate.move(action)
-                    actionOther = self.chooseAction(nextgamestate)
-                    nextgamestate.move(actionOther)
+                    nextgamestate.move(self.chooseAction(self.game))
 
-                    # reward = nextgamestate.GetReward(p)
                     #Save state0 and action0
                     if i == 0:
                         action0 = action
-                        actionOpponent = actionOther
                         state0 = boardToState(self.game.board)
                         self.Q_ø.setdefault(state0,np.zeros(9))
-                    #Summing rewards
-                    # giN += self.gamma**(i+1) * reward 
-                    
+
+                    #Summing cost
+                    giN += np.power(self.gamma,i) * nextgamestate.getCost(p)
                     
                     if nextgamestate.over:
-                        self.Q_ø.setdefault(boardToState(nextgamestate.board),np.full(9,nextgamestate.GetReward(p)))
+                        self.Q_ø.setdefault(boardToState(nextgamestate),np.full(9,nextgamestate.getCost(p)))
                         break #Reached a terminal state
                 
                 newValue = (
-                    (1-self.lr) * self.Q_ø[state0][action0] + 
-                    self.lr*((giN) + self.gamma**(i+1) * min(self.Q_ø.setdefault(boardToState(nextgamestate.board),np.zeros(9))))
+                    (1-self.gamma) * self.Q_ø[state0][action0] + 
+                    (self.gamma) * ((giN) + np.power(self.gamma,i+1) * min(self.Q_ø.setdefault(boardToState(nextgamestate),np.zeros(9))))
                     )
                 self.Q_ø[state0][action0] = newValue
                 self.game.move(action0)
-                self.game.move(actionOpponent)
+                self.game.move(self.chooseAction(self.game))
             winner, _ = startAIGamevsMATH(self, game  = TicTacToe(), p = p, doPrint = False)
             if winner == p:
-                rewardSum -=2
+                costSum -=2
             elif winner == 0:
-                rewardSum += 0
+                costSum += 0
             else:
-                rewardSum += 2
-        return rewardSum
+                costSum += 2
+        return costSum
         
 """ MATHIAS EXPERT """
 f = open("MathExpert.json","r")
@@ -392,8 +382,6 @@ def multiprocessingMain(aiList, rounds, tests):
 
 def Main(aiList, rounds, tests):
     start_time = time.time()
-    rounds = 200
-    tests = 10
     
     result = []
     for i in range(len(aiList)):
@@ -420,18 +408,14 @@ def Main(aiList, rounds, tests):
 
 if __name__ == '__main__':
     random.seed(42)
-    rounds = 2000
+    rounds = 400
     tests = 100
+    eList = [0.1,0.2,0.3]
+    NList = [1,2,3]
     aiList = [
-                TictactoeAI(epsilon = 0.1, N=1, gamma=0.8, lr=0.001),
-                TictactoeAI(epsilon = 0.1, N=2, gamma=0.8, lr=0.001),
-                TictactoeAI(epsilon = 0.1, N=3, gamma=0.8, lr=0.001),
-                TictactoeAI(epsilon = 0.2, N=1, gamma=0.8, lr=0.001),
-                TictactoeAI(epsilon = 0.2, N=2, gamma=0.8, lr=0.001),
-                TictactoeAI(epsilon = 0.2, N=3, gamma=0.8, lr=0.001),
-                TictactoeAI(N=1, gamma=0.9, lr=0.001),
-                TictactoeAI(N=2, gamma=0.9, lr=0.001),
-                TictactoeAI(N=3, gamma=0.9, lr=0.001)
+                TictactoeAI(epsilon = e, N=N, gamma=0.999)
+                for e in eList
+                for N in NList
             ]
     multiprocessingMain(aiList, rounds, tests)
     
