@@ -88,31 +88,33 @@ def run_episode(e, environment):
     n = random.randint(1,N)
     while True:
         # env.render()
-        state = stateOld
         action = actionOld
-        for _ in range(n):
+        state = stateOld
+        for i in range(n):
+            state, reward, done, _ = environment.step(action[0, 0].item())
             action = select_action(FloatTensor([state]))
-            state, reward, done, _ = environment.step(action[0, 0].item() )
             G += reward
-            rewardSum += reward
+            rewardSum += np.power(reward,i-1)
             steps += 1
 
             if done:
                 break
 
-    
+        newQ = model(FloatTensor([state])).gather(1, action).item()
         # negative reward when attempt ends
         if done:
             reward = -1
             G += reward
             rewardSum += reward
+            newQ = 0
 
         
         n=N
         memory.push((FloatTensor([stateOld]),
                     actionOld,  # action is already a tensor
-                    FloatTensor([state]),
-                    FloatTensor([rewardSum])))
+                    FloatTensor([rewardSum]),
+                    FloatTensor([newQ]) 
+                    ))
         stateOld = state
         actionOld = action
         rewardSum = 0
@@ -144,12 +146,12 @@ def learn():
     # random transition batch is taken from experience replay memory
     transitions = memory.sample(BATCH_SIZE)
 
-    batch_state, batch_action, batch_next_state, batch_reward = zip(*transitions)
+    batch_state, batch_action, batch_reward, QValue = zip(*transitions)
 
     batch_state = Variable(torch.cat(batch_state))
     batch_action = Variable(torch.cat(batch_action))
     batch_reward = Variable(torch.cat(batch_reward))
-    batch_next_state = Variable(torch.cat(batch_next_state))
+    next_q_values = Variable(torch.cat(QValue))
     
     for _ in range(N-1):
 
@@ -157,12 +159,11 @@ def learn():
 
     # current Q values are estimated by NN for all actions
     current_q_values = model(batch_state).gather(1, batch_action)
-    # expected Q values are estimated from actions which gives maximum Q value
-    max_next_q_values = model(batch_next_state).detach().max(1)[0]
-    expected_q_values = batch_reward + (np.power(GAMMA,N) * max_next_q_values)
+    # next Q values are estimated by NN for all next actions
+    q_values = batch_reward + (np.power(GAMMA,N) * next_q_values)
 
     # loss is measured from error between current and newly expected Q values
-    loss = F.smooth_l1_loss(current_q_values, expected_q_values.view(-1, 1))
+    loss = F.smooth_l1_loss(current_q_values, q_values.view(-1,1))
 
     # backpropagation of loss to NN
     optimizer.zero_grad()

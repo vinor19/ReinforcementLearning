@@ -81,6 +81,7 @@ def run_episode(e, environment):
     G = 0
     state = environment.reset()
     steps = 0
+    
 
     stateOld = state
     actionOld = select_action(FloatTensor([state]))
@@ -88,31 +89,40 @@ def run_episode(e, environment):
     n = random.randint(1,N)
     while True:
         # env.render()
-        state = stateOld
         action = actionOld
-        for _ in range(n):
+        state = stateOld
+        for i in range(n):
+            statePrev = state
+            state, reward, done, _ = environment.step(action[0, 0].item())
             action = select_action(FloatTensor([state]))
-            state, reward, done, _ = environment.step(action[0, 0].item() )
             G += reward
-            rewardSum += reward
+            rewardSum += np.power(reward,i-1)
             steps += 1
 
             if done:
                 break
 
-    
+        newQ = model(FloatTensor([state]))[0]
         # negative reward when attempt ends
         if done:
             reward = -1
             G += reward
             rewardSum += reward
+            newQ = FloatTensor([[0]]*env.action_space.n)
 
-        
+        sum = FloatTensor([0])
+        prevQ = F.softmax(-1*model(FloatTensor([statePrev]))[0],dim=0)
+        for i in range(env.action_space.n):
+            sum += prevQ[i]*(newQ[i])
+
+        newQ = sum
+
         n=N
         memory.push((FloatTensor([stateOld]),
                     actionOld,  # action is already a tensor
-                    FloatTensor([state]),
-                    FloatTensor([rewardSum])))
+                    FloatTensor([rewardSum]),
+                    newQ
+                    ))
         stateOld = state
         actionOld = action
         rewardSum = 0
@@ -126,7 +136,7 @@ def run_episode(e, environment):
             rewardTracker.append(G)
             episode_durations.append(steps)
             if e %100 == 0:
-              # env.render()
+            #   env.render()
               print("{2} Episode {0} finished after {1} steps"
                    .format(e, steps, '\033[92m' if steps >= 195 else '\033[99m'))
               print('Average reward for 100 episode= {}'.format(episodeSum / 100))
@@ -144,25 +154,23 @@ def learn():
     # random transition batch is taken from experience replay memory
     transitions = memory.sample(BATCH_SIZE)
 
-    batch_state, batch_action, batch_next_state, batch_reward = zip(*transitions)
+    batch_state, batch_action, batch_reward, QValue = zip(*transitions)
 
     batch_state = Variable(torch.cat(batch_state))
     batch_action = Variable(torch.cat(batch_action))
     batch_reward = Variable(torch.cat(batch_reward))
-    batch_next_state = Variable(torch.cat(batch_next_state))
-    
-    for _ in range(N-1):
-
-        pass
+    next_q_values = Variable(torch.cat(QValue))
 
     # current Q values are estimated by NN for all actions
     current_q_values = model(batch_state).gather(1, batch_action)
-    # expected Q values are estimated from actions which gives maximum Q value
-    max_next_q_values = model(batch_next_state).detach().max(1)[0]
-    expected_q_values = batch_reward + (np.power(GAMMA,N) * max_next_q_values)
+    # next Q values are estimated by NN for all next actions
+    sum = 0
+    
+
+    q_values = batch_reward + (np.power(GAMMA,N) * next_q_values )
 
     # loss is measured from error between current and newly expected Q values
-    loss = F.smooth_l1_loss(current_q_values, expected_q_values.view(-1, 1))
+    loss = F.smooth_l1_loss(current_q_values, q_values.view(-1,1))
 
     # backpropagation of loss to NN
     optimizer.zero_grad()
