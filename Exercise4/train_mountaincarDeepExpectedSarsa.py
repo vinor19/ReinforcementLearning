@@ -70,7 +70,17 @@ def select_action(state):
     if sample > eps_threshold:
         return model(Variable(state).type(FloatTensor)).data.max(1)[1].view(1, 1)
     else:
-        return LongTensor([[random.randrange(2)]])  # return env.action_space.sample()
+        return LongTensor([[random.randrange(env.action_space.n-1)]])  # return env.action_space.sample()
+
+def probability_policy(state):
+    result = [0]*env.action_space.n
+    for i in range(env.action_space.n):
+        eps = EPS_END + (EPS_START - EPS_END) * math.exp(-1. * steps_done / EPS_DECAY)
+        if model(Variable(state).type(FloatTensor)).data.max(1)[1].view(1, 1).item() == i:
+            result[i] = 1 - eps + eps/(env.action_space.n)
+        else:
+            result[i] = eps/env.action_space.n
+    return result
 
 # print( env.action_space.n)
 # print(env.observation_space.shape[0])
@@ -92,7 +102,6 @@ def run_episode(e, environment):
         action = actionOld
         state = stateOld
         for i in range(n):
-            statePrev = state
             state, reward, done, _ = environment.step(action[0, 0].item())
             action = select_action(FloatTensor([state]))
             G += reward
@@ -111,9 +120,10 @@ def run_episode(e, environment):
             newQ = FloatTensor([[0]]*env.action_space.n)
 
         sum = FloatTensor([0])
-        prevQ = F.softmax(-1*model(FloatTensor([statePrev]))[0],dim=0)
+        policy_probabilities = probability_policy(FloatTensor([state]))
         for i in range(env.action_space.n):
-            sum += prevQ[i]*(newQ[i])
+
+            sum += policy_probabilities[i]*(newQ[i])
 
         newQ = sum
 

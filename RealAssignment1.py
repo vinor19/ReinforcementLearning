@@ -6,7 +6,6 @@ from matplotlib import pyplot as plt
 from multiprocessing import Pool, cpu_count
 import time
 
-
 # Game interface
 class BoardGame:
     def __init__(self):
@@ -227,7 +226,7 @@ class TictactoeAI(Player):
                             self.Q_ø.setdefault(state0,[0]*9)
 
                         #Summing cost
-                        giN += np.power(self.gamma,i) * self.game.getCost(p)
+                        giN += self.game.getCost(p)
                         
                         if self.game.over:
                             # self.Q_ø.setdefault(self.game.toState(),[self.game.getCost(p)]*9)
@@ -235,7 +234,7 @@ class TictactoeAI(Player):
                     N=self.N
                     newValue = (
                         (1-self.gamma) * self.Q_ø[state0][action0] + 
-                        (self.gamma) * ((giN) + np.power(self.gamma,i+1) * min(self.Q_ø.setdefault(self.game.toState(),[0]*9)))
+                        (self.gamma) * ((giN) + min(self.Q_ø.setdefault(self.game.toState(),[0]*9)))
                         )
                     self.Q_ø[state0][action0] = newValue
                 self.game.reset()
@@ -256,7 +255,7 @@ def testTrainingRewardsReturned(ai:TictactoeAI, rounds, tests):
     scores = []
     for j in range(tests):
         ai.reset()
-        scores.append(ai.train(epochs=rounds))
+        scores.append(ai.train(opponent = MathiasExpert(), epochs=rounds))
         if j%(tests/10) == tests/10-1:
             print(ai.epsilon, ai.N, str((j+1)/tests*100)+"%")
     print(ai.epsilon, ai.N, "Done")
@@ -292,12 +291,12 @@ def multiprocessingMain(aiList, rounds, tests):
 
 if __name__ == '__main__':
     # random.seed(42)
-    rounds = 4000
-    tests = 50
+    rounds = 1500
+    tests = 20
     eList = [0.1,0.2,0.3]
     NList = [1,2,3]
     aiList = [
-                TictactoeAI(epsilon = e, N=N, gamma=0.999)
+                TictactoeAI(epsilon = e, N=N, gamma=0.95)
                 for e in eList
                 for N in NList
             ]
