@@ -94,16 +94,17 @@ def run_episode(e, environment):
             action = select_action(FloatTensor([state]))
             state, reward, done, _ = environment.step(action[0, 0].item() )
             G += reward
-            rewardSum += reward
-            steps += 1
 
             if done:
                 break
+            
+            rewardSum += reward
+            steps += 1
 
     
         # negative reward when attempt ends
         if done:
-            reward = -1
+            reward = 1
             G += reward
             rewardSum += reward
 

@@ -23,7 +23,7 @@ N=3
 BATCH_SIZE = 64  # Q-learning batch size
 
 # if gpu is to be used
-use_cuda = torch.cuda.is_available()
+use_cuda = False
 FloatTensor = torch.cuda.FloatTensor if use_cuda else torch.FloatTensor
 LongTensor = torch.cuda.LongTensor if use_cuda else torch.LongTensor
 ByteTensor = torch.cuda.ByteTensor if use_cuda else torch.ByteTensor
@@ -93,32 +93,35 @@ def run_episode(e, environment):
         for i in range(n):
             state, reward, done, _ = environment.step(action[0, 0].item())
             action = select_action(FloatTensor([state]))
-            G += reward
-            rewardSum += np.power(reward,i-1)
+
             steps += 1
 
             if done:
                 break
+            G += reward
+            rewardSum += np.power(GAMMA,i-1) * reward
 
-        newQ = model(FloatTensor([state])).gather(1, action).item()
         # negative reward when attempt ends
         if done:
-            reward = -1
+            reward = np.power(GAMMA,i-1) * -1
             G += reward
             rewardSum += reward
-            newQ = 0
 
+        print(steps)
         
         n=N
         memory.push((FloatTensor([stateOld]),
                     actionOld,  # action is already a tensor
                     FloatTensor([rewardSum]),
-                    FloatTensor([newQ]) 
+                    FloatTensor([state]),
+                    action
                     ))
         stateOld = state
         actionOld = action
         rewardSum = 0
 
+        # if steps%1000 == 999:
+        #     print(steps+1)
 
         learn()
 
@@ -128,7 +131,7 @@ def run_episode(e, environment):
             rewardTracker.append(G)
             episode_durations.append(steps)
             if e %100 == 0:
-              # env.render()
+            #   env.render()
               print("{2} Episode {0} finished after {1} steps"
                    .format(e, steps, '\033[92m' if steps >= 195 else '\033[99m'))
               print('Average reward for 100 episode= {}'.format(episodeSum / 100))
@@ -146,12 +149,14 @@ def learn():
     # random transition batch is taken from experience replay memory
     transitions = memory.sample(BATCH_SIZE)
 
-    batch_state, batch_action, batch_reward, QValue = zip(*transitions)
+    batch_state, batch_action, batch_reward, batch_state_new, batch_action_new = zip(*transitions)
 
     batch_state = Variable(torch.cat(batch_state))
     batch_action = Variable(torch.cat(batch_action))
     batch_reward = Variable(torch.cat(batch_reward))
-    next_q_values = Variable(torch.cat(QValue))
+    batch_state_new = Variable(torch.cat(batch_state_new))
+    batch_action_new = Variable(torch.cat(batch_action_new))
+
     
     for _ in range(N-1):
 
@@ -160,10 +165,30 @@ def learn():
     # current Q values are estimated by NN for all actions
     current_q_values = model(batch_state).gather(1, batch_action)
     # next Q values are estimated by NN for all next actions
-    q_values = batch_reward + (np.power(GAMMA,N) * next_q_values)
+
+    next_q_values = model(batch_state_new).gather(1,batch_action_new).squeeze(1)
+
+    # next_q_values = FloatTensor()
+    # for i in range(64):
+    #     # print("next_q_values",next_q_values)
+    #     # print(batch_state_new[i],batch_action_new[i],model(batch_state_new[i]).gather(0, batch_action_new[i]))
+    #     if batch_done[i]:
+    #         next_q_values = torch.cat((next_q_values, batch_reward[i]+FloatTensor([GAMMA * -1])))
+    #     else:
+    #         next_q_values = torch.cat((next_q_values,
+    #         batch_reward[i]+ GAMMA * model(batch_state_new[i]).gather(0, batch_action_new[i])))
+
+
+    # print(next_q_values.shape)
+
+    q_values = (batch_reward + ( GAMMA * next_q_values)).view(-1,1)
+    # q_values = next_q_values.view(-1,1)
+
+    # print("Qvalues",q_values.shape)
+    # print("Current",current_q_values.shape)
 
     # loss is measured from error between current and newly expected Q values
-    loss = F.smooth_l1_loss(current_q_values, q_values.view(-1,1))
+    loss = F.smooth_l1_loss(current_q_values, q_values)
 
     # backpropagation of loss to NN
     optimizer.zero_grad()

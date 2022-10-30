@@ -1,3 +1,4 @@
+from cmath import exp
 import time
 time.clock = time.time
 import gym
@@ -16,14 +17,13 @@ EPS_START = 0.9  # e-greedy threshold start value
 EPS_END = 0.05  # e-greedy threshold end value
 EPS_DECAY = 200  # e-greedy threshold decay
 EPISODES = 300  # number of episodes
-GAMMA = 0.995  # Q-learning discount factor
+GAMMA = 0.99  # Q-learning discount factor
 LR = 0.001  # NN optimizer learning rate
-N=3
-
+N=1
 BATCH_SIZE = 64  # Q-learning batch size
 
 # if gpu is to be used
-use_cuda = torch.cuda.is_available()
+use_cuda = False
 FloatTensor = torch.cuda.FloatTensor if use_cuda else torch.FloatTensor
 LongTensor = torch.cuda.LongTensor if use_cuda else torch.LongTensor
 ByteTensor = torch.cuda.ByteTensor if use_cuda else torch.ByteTensor
@@ -70,10 +70,24 @@ def select_action(state):
     if sample > eps_threshold:
         return model(Variable(state).type(FloatTensor)).data.max(1)[1].view(1, 1)
     else:
-        return LongTensor([[random.randrange(2)]])  # return env.action_space.sample()
+        return LongTensor([[random.randrange(env.action_space.n-1)]])  # return env.action_space.sample()
 
-# print( env.action_space.n)
-# print(env.observation_space.shape[0])
+def ExpectedValues(batch_state):
+    q_values = model(batch_state).detach()
+    optimal = q_values.max(1)[1]
+    # print(optimal)
+    result = [0]*BATCH_SIZE
+
+    for i in range(BATCH_SIZE):
+        global steps_done
+        for j in range(env.action_space.n):
+            eps = EPS_END + (EPS_START - EPS_END) * math.exp(-1. * (steps_done) / EPS_DECAY)
+            if optimal[i].item() == j:
+                result[i] += (1 - eps + eps/(env.action_space.n)) * q_values[i][j]
+            else:
+                result[i] += eps/env.action_space.n * q_values[i][j]
+    return result
+
 
 def run_episode(e, environment):
     rewardTracker = []
@@ -82,51 +96,38 @@ def run_episode(e, environment):
     state = environment.reset()
     steps = 0
     
-
-    stateOld = state
-    actionOld = select_action(FloatTensor([state]))
     rewardSum = 0
-    n = random.randint(1,N)
     while True:
         # env.render()
-        action = actionOld
-        state = stateOld
-        for i in range(n):
-            statePrev = state
-            state, reward, done, _ = environment.step(action[0, 0].item())
+        for i in range(N):
             action = select_action(FloatTensor([state]))
-            G += reward
-            rewardSum += np.power(reward,i-1)
+            if i == 0:
+                stateOld = state
+                actionOld = action
+            state, reward, done, _ = environment.step(action[0, 0].item())
+            
             steps += 1
 
             if done:
                 break
 
-        newQ = model(FloatTensor([state]))[0]
+            G += reward
+            rewardSum += GAMMA * reward
+
         # negative reward when attempt ends
         if done:
             reward = -1
             G += reward
-            rewardSum += reward
-            newQ = FloatTensor([[0]]*env.action_space.n)
+            rewardSum += GAMMA * reward
+            # newQ = FloatTensor([[-1]]*env.action_space.n)
 
-        sum = FloatTensor([0])
-        prevQ = F.softmax(-1*model(FloatTensor([statePrev]))[0],dim=0)
-        for i in range(env.action_space.n):
-            sum += prevQ[i]*(newQ[i])
-
-        newQ = sum
-
-        n=N
         memory.push((FloatTensor([stateOld]),
                     actionOld,  # action is already a tensor
                     FloatTensor([rewardSum]),
-                    newQ
+                    FloatTensor([state])
                     ))
-        stateOld = state
-        actionOld = action
-        rewardSum = 0
 
+        rewardSum = 0
 
         learn()
 
@@ -135,7 +136,7 @@ def run_episode(e, environment):
             episodeSum += G
             rewardTracker.append(G)
             episode_durations.append(steps)
-            if e %100 == 0:
+            if e %100 == 0 and e != 0:
             #   env.render()
               print("{2} Episode {0} finished after {1} steps"
                    .format(e, steps, '\033[92m' if steps >= 195 else '\033[99m'))
@@ -154,23 +155,22 @@ def learn():
     # random transition batch is taken from experience replay memory
     transitions = memory.sample(BATCH_SIZE)
 
-    batch_state, batch_action, batch_reward, QValue = zip(*transitions)
+    batch_state, batch_action, batch_reward, batch_state_new = zip(*transitions)
 
     batch_state = Variable(torch.cat(batch_state))
     batch_action = Variable(torch.cat(batch_action))
     batch_reward = Variable(torch.cat(batch_reward))
-    next_q_values = Variable(torch.cat(QValue))
+    batch_state_new = Variable(torch.cat(batch_state_new))
 
     # current Q values are estimated by NN for all actions
     current_q_values = model(batch_state).gather(1, batch_action)
-    # next Q values are estimated by NN for all next actions
-    sum = 0
-    
 
-    q_values = batch_reward + (np.power(GAMMA,N) * next_q_values )
+    # next Q values are estimated by NN for all next actions
+    expected_values = GAMMA * FloatTensor(ExpectedValues(batch_state_new))
+    q_values = (batch_reward + expected_values).view(-1,1)
 
     # loss is measured from error between current and newly expected Q values
-    loss = F.smooth_l1_loss(current_q_values, q_values.view(-1,1))
+    loss = F.smooth_l1_loss(current_q_values, q_values)
 
     # backpropagation of loss to NN
     optimizer.zero_grad()
@@ -179,8 +179,6 @@ def learn():
 
 
 for e in range(EPISODES):
-
-
     run_episode(e, env)
 
             
