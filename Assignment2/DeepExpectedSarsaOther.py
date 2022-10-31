@@ -18,9 +18,10 @@ from ReplayMemory import ReplayMemory
 path='model_scripted_des.pt'
 matplotlib.use("TkAgg")
 
-use_cuda = False
+use_cuda = True
 FloatTensor = torch.cuda.FloatTensor if use_cuda else torch.FloatTensor
 LongTensor = torch.cuda.LongTensor if use_cuda else torch.LongTensor
+IntTensor = torch.cuda.IntTensor if use_cuda else torch.IntTensor
 ByteTensor = torch.cuda.ByteTensor if use_cuda else torch.ByteTensor
 Tensor = FloatTensor
 
@@ -59,7 +60,7 @@ class DES():
 
         if sample > eps_threshold:
             if self.env.action_space.shape == ():
-                return torch.IntTensor([[self.available_actions[self.model(Variable(state).type(FloatTensor)).data.max(1)[1].view(1, 1).item()]]])
+                return IntTensor([[self.available_actions[self.model(Variable(state).type(FloatTensor)).data.max(1)[1].view(1, 1).item()]]])
             else:
                 return self.model(Variable(state).type(FloatTensor)).data.max(1)[1].view(1, 1)
         else:
@@ -86,7 +87,7 @@ class DES():
         while True:
             # self.env.render()
             for i in range(self.N):
-                action = self.select_action(FloatTensor([state])).long()
+                action = self.select_action(FloatTensor([state]))
                 if self.env.action_space.shape == ():
                     applied_action = action[0, 0].item()
                 else:
@@ -119,23 +120,18 @@ class DES():
                 episodeSum += G
                 return G
     
-    def ExpectedValues(self, batch_state):
-        q_values = self.model(batch_state)
-        # print(q_values)
-
-        optimal = q_values.max(1)[1]
-        # print(optimal)
-        result = [0]*self.BATCH_SIZE
+    def probability_distribution(self, q_values):
+        optimal = q_values.data.max(1)[1]
+        eps = self.EPS_END + (self.EPS_START - self.EPS_END) * math.exp(-1. * (self.steps_done) / self.EPS_DECAY)
+        result = []
 
         for i in range(self.BATCH_SIZE):
             for j in range(self.action_space_size):
-                eps = self.EPS_END + (self.EPS_START - self.EPS_END) * math.exp(-1. * (self.steps_done) / self.EPS_DECAY)
                 if optimal[i].item() == j:
-                    # print(j)
-                    result[i] += (1 - eps + eps/(self.action_space_size)) * q_values[i][j]
+                    result.append(1 - eps + eps/(self.action_space_size))
                 else:
-                    result[i] += eps/self.action_space_size * q_values[i][j]
-        return result
+                    result.append(eps/(self.action_space_size))
+        return [result[i*self.action_space_size:i*self.action_space_size+self.action_space_size] for i in range(self.BATCH_SIZE)]
     
     def learn(self):
         if len(self.memory) < self.BATCH_SIZE:
@@ -157,14 +153,32 @@ class DES():
         # print(batch_action)
         current_q_values = current_q_values.gather(1, batch_action)
 
-        # next Q values are estimated by NN for all next actions
-        expected_values = self.GAMMA * FloatTensor(self.ExpectedValues(batch_state_new))
-        # print(expected_values)
-        q_values = (batch_reward + expected_values).view(-1,1)
+        # print(current_q_values)
 
-        # print("expected after sum",expected_values)
-        # print("batch rewards",batch_reward)
-        # print("final q values",q_values)
+        new_q_values = self.model(batch_state_new).detach()
+        # print(new_q_values)
+        prob = Tensor(self.probability_distribution(new_q_values))
+
+        # next Q values are estimated by NN for all next actions
+        expected_values1 = prob * new_q_values
+        # print("Before summing",expected_values)
+        expected_values = self.GAMMA * torch.sum(expected_values1,dim=1)
+        # print(expected_values)
+
+
+        # print("After summing",expected_values)
+
+        # print(new_q_values,prob,expected_values)
+        # print(prob)
+
+        q_values = (batch_reward + expected_values).view(-1,1)
+        # if self.steps_done % 50 == 1:
+        #     print("Prob",prob)
+        #     print("new_q_values",new_q_values)
+        #     print("expected before sum",expected_values1)
+        #     print("expected after sum",expected_values)
+        #     print("batch rewards",batch_reward)
+        #     print("final q values",q_values)
         # loss is measured from error between current and newly expected Q values
         loss = F.smooth_l1_loss(current_q_values, q_values)
 
@@ -185,7 +199,7 @@ if __name__ == '__main__':
     # print("This right here",tmp.action_space.sample())
     # env_being_tested = "MountainCar-v0"
     ai_list = [
-        (env_being_tested[1],1,0.001,0.99,0.9,0.05,200,8),
+        (env_being_tested[1],1,0.001,0.99,0.9,0.05,200,64),
         (env_being_tested[1],3,0.001,0.99,0.9,0.05,200,64),
         (env_being_tested[1],5,0.001,0.99,0.9,0.05,200,64)
     ]
