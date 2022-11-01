@@ -18,7 +18,7 @@ from ReplayMemory import ReplayMemory
 path='model_scripted_des.pt'
 matplotlib.use("TkAgg")
 
-use_cuda = True
+use_cuda = False
 FloatTensor = torch.cuda.FloatTensor if use_cuda else torch.FloatTensor
 LongTensor = torch.cuda.LongTensor if use_cuda else torch.LongTensor
 IntTensor = torch.cuda.IntTensor if use_cuda else torch.IntTensor
@@ -47,6 +47,8 @@ class DES():
             for i in range(self.action_space_size):
                 self.available_actions[i] +=  abs(self.action_low-self.action_high)/(self.action_space_size-1) * i
         self.model = Network(self.env.observation_space.shape[0], self.action_space_size)
+        if use_cuda:
+            self.model.cuda()
         self.memory = ReplayMemory(100000)
         self.optimizer = optim.Adam(self.model.parameters(), self.LR)
         self.steps_done = 0
@@ -69,7 +71,7 @@ class DES():
     def train(self, episodes = 300):
         rewardTracker = []
         for e in range(episodes):
-            rewardTracker.append(self.run_episode())
+            rewardTracker.append(self.run_episode(e))
             if e %100 == 0 and e != 0:
                 # self.env.render()
                 print("{2} Episode {0} finished after {1} steps"
@@ -77,7 +79,7 @@ class DES():
                 print('Average reward for 100 episode= {}'.format(sum(rewardTracker[e-100:e]) / 100))
         return rewardTracker
 
-    def run_episode(self):
+    def run_episode(self, e):
         episodeSum = 0
         G = 0
         state = self.env.reset()
@@ -87,7 +89,7 @@ class DES():
         while True:
             # self.env.render()
             for i in range(self.N):
-                action = self.select_action(FloatTensor([state]))
+                action = self.select_action(FloatTensor([state])).long()
                 if self.env.action_space.shape == ():
                     applied_action = action[0, 0].item()
                 else:
@@ -99,7 +101,7 @@ class DES():
                 
                 steps += 1
                 G += reward
-                rewardSum += self.GAMMA * reward
+                rewardSum +=  np.power(self.GAMMA,i) * reward
                 if done:
                     break
 
@@ -111,12 +113,11 @@ class DES():
 
             rewardSum = 0
 
-            if len(self.memory) % 2 == 1:
-                self.learn()
+            self.learn()
 
             if done:
                 # self.env.render()
-                print('\033[92m',steps)
+                # print('\033[92m',steps)
                 episodeSum += G
                 return G
     
@@ -153,32 +154,16 @@ class DES():
         # print(batch_action)
         current_q_values = current_q_values.gather(1, batch_action)
 
-        # print(current_q_values)
-
         new_q_values = self.model(batch_state_new).detach()
         # print(new_q_values)
-        prob = Tensor(self.probability_distribution(new_q_values))
+        prob = Tensor(self.probability_distribution(new_q_values)).detach()
 
         # next Q values are estimated by NN for all next actions
         expected_values1 = prob * new_q_values
         # print("Before summing",expected_values)
-        expected_values = self.GAMMA * torch.sum(expected_values1,dim=1)
-        # print(expected_values)
-
-
-        # print("After summing",expected_values)
-
-        # print(new_q_values,prob,expected_values)
-        # print(prob)
+        expected_values = np.power(self.GAMMA,self.N) * torch.sum(expected_values1.detach(),dim=1)
 
         q_values = (batch_reward + expected_values).view(-1,1)
-        # if self.steps_done % 50 == 1:
-        #     print("Prob",prob)
-        #     print("new_q_values",new_q_values)
-        #     print("expected before sum",expected_values1)
-        #     print("expected after sum",expected_values)
-        #     print("batch rewards",batch_reward)
-        #     print("final q values",q_values)
         # loss is measured from error between current and newly expected Q values
         loss = F.smooth_l1_loss(current_q_values, q_values)
 
@@ -187,21 +172,21 @@ class DES():
         loss.backward()
         self.optimizer.step()
 
-colors = ['cyan','aquamarine','blue','yellow','orange','red','lime','green','darkgreen']
+colors = ['blue','red','green']
 
 if __name__ == '__main__':
     random.seed(1)
     start_time = time.time()
-    episodes = 20
-    tests = 10
+    episodes = 50
+    tests = 5
     env_being_tested = ["MountainCar-v0","Acrobot-v1","Pendulum-v1"]
     tmp = gym.make(env_being_tested[2])
     # print("This right here",tmp.action_space.sample())
     # env_being_tested = "MountainCar-v0"
     ai_list = [
-        (env_being_tested[1],1,0.001,0.99,0.9,0.05,200,64),
-        (env_being_tested[1],3,0.001,0.99,0.9,0.05,200,64),
-        (env_being_tested[1],5,0.001,0.99,0.9,0.05,200,64)
+        (env_being_tested[1],1,0.001,0.995,0.9,0.05,200,64),
+        (env_being_tested[1],3,0.001,0.995,0.9,0.05,200,64),
+        (env_being_tested[1],5,0.001,0.995,0.9,0.05,200,64)
     ]
     ai_learncurve = []
     for j in range(len(ai_list)):
@@ -226,7 +211,7 @@ if __name__ == '__main__':
     plt.xlabel("Epochs trained")
     plt.ylabel("Costs")
     plt.title("Training methods")
-    ax.legend(["DES_N1","DES_N4","DES_N7"])
+    ax.legend(["DES_N1","DES_N3","DES_N5"])
     print("--- %s seconds ---" % (time.time() - start_time))
     plt.savefig('learning-curve.png')
     plt.show()

@@ -84,12 +84,12 @@ class DES():
         G = 0
         state = self.env.reset()
         steps = 0
-        
         rewardSum = 0
         while True:
             # self.env.render()
             for i in range(self.N):
                 action = self.select_action(FloatTensor([state])).long()
+
                 if self.env.action_space.shape == ():
                     applied_action = action[0, 0].item()
                 else:
@@ -102,8 +102,6 @@ class DES():
                 steps += 1
                 G += reward
                 rewardSum += self.GAMMA * reward
-
-                
                 if steps >= 1500:
                     done = True
                 if done:
@@ -116,31 +114,14 @@ class DES():
                         ))
 
             rewardSum = 0
-
-            self.learn()
+            if len(self.memory) % 2 == 0:
+                self.learn()
 
             if done:
                 # self.env.render()
                 # print('\033[92m',steps)
                 episodeSum += G
                 return G
-    
-    def ExpectedValues(self, q_values):
-        # print(q_values)
-
-        optimal = q_values.max(1)[1]
-        # print(optimal)
-        result = [0]*self.BATCH_SIZE
-
-        for i in range(self.BATCH_SIZE):
-            for j in range(self.action_space_size):
-                eps = self.EPS_END + (self.EPS_START - self.EPS_END) * math.exp(-1. * (self.steps_done) / self.EPS_DECAY)
-                if optimal[i].item() == j:
-                    # print(j)
-                    result[i] += (1 - eps + eps/(self.action_space_size)) * q_values[i][j]
-                else:
-                    result[i] += eps/self.action_space_size * q_values[i][j]
-        return result
     
     def learn(self):
         if len(self.memory) < self.BATCH_SIZE:
@@ -163,9 +144,11 @@ class DES():
         current_q_values = current_q_values.gather(1, batch_action)
 
         # next Q values are estimated by NN for all next actions
-        expected_values = self.GAMMA * FloatTensor(self.ExpectedValues(self.model(batch_state_new).detach()))
+        
+        max_next_q_values = self.model(batch_state_new).detach().max(1)[0]
+        expected_q_values = batch_reward + self.GAMMA * max_next_q_values
         # print(expected_values)
-        q_values = (batch_reward + expected_values).view(-1,1)
+        q_values = (batch_reward + expected_q_values).view(-1,1)
 
         # print("expected after sum",expected_values)
         # print("batch rewards",batch_reward)
@@ -183,16 +166,16 @@ colors = ['blue','red','green']
 if __name__ == '__main__':
     # random.seed(1)
     start_time = time.time()
-    episodes = 600
-    tests = 10
+    episodes = 400
+    tests = 8
     env_being_tested = ["MountainCar-v0","Acrobot-v1","Pendulum-v1"]
     tmp = gym.make(env_being_tested[2])
     # print("This right here",tmp.action_space.sample())
     # env_being_tested = "MountainCar-v0"
     ai_list = [
         (env_being_tested[1],1,0.001,0.995,0.9,0.05,200,64),
-        # (env_being_tested[1],3,0.001,0.995,0.9,0.05,200,64),
-        # (env_being_tested[1],5,0.001,0.995,0.9,0.05,200,64)
+        (env_being_tested[1],3,0.001,0.995,0.9,0.05,200,64),
+        (env_being_tested[1],5,0.001,0.995,0.9,0.05,200,64)
     ]
     ai_learncurve = []
     for j in range(len(ai_list)):
@@ -205,19 +188,19 @@ if __name__ == '__main__':
         print("Done",j)
 
     _, ax = plt.subplots()
-
+    labels = ["DES_N1","DES_N3","DES_N5"]
     for i in range(len(ai_list)):
         # print(ai_learncurve[i*tests:i*tests+tests])
         mean = np.array(ai_learncurve[i*tests:i*tests+tests]).mean(axis=0)
         # print(mean)
         std = np.array(ai_learncurve[i*tests:i*tests+tests]).std(axis=0)/np.sqrt(tests)
-        ax.plot(range(0,episodes),mean, color=colors[i])
+        ax.plot(range(0,episodes),mean, color=colors[i],label = labels[i])
         ax.fill_between(range(0,episodes),mean+std, mean-std, facecolor=colors[i], alpha=0.2)
 
     plt.xlabel("Epochs trained")
     plt.ylabel("Costs")
     plt.title("Training methods")
-    ax.legend(["DES_N1","DES_N4","DES_N7"])
+    ax.legend(labels)
     print("--- %s seconds ---" % (time.time() - start_time))
-    plt.savefig('learning-curve.png')
+    plt.savefig('learning-curve-DQL-Acrobot.png')
     plt.show()

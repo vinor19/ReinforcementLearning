@@ -84,12 +84,11 @@ class DES():
         G = 0
         state = self.env.reset()
         steps = 0
-        
+        action = self.select_action(FloatTensor([state])).long()
         rewardSum = 0
         while True:
             # self.env.render()
             for i in range(self.N):
-                action = self.select_action(FloatTensor([state])).long()
                 if self.env.action_space.shape == ():
                     applied_action = action[0, 0].item()
                 else:
@@ -102,6 +101,7 @@ class DES():
                 steps += 1
                 G += reward
                 rewardSum += self.GAMMA * reward
+                action = self.select_action(FloatTensor([state])).long()
 
                 
                 if steps >= 1500:
@@ -112,7 +112,8 @@ class DES():
             self.memory.push((FloatTensor([stateOld]),
                         actionOld,  # action is already a tensor
                         FloatTensor([rewardSum]),
-                        FloatTensor([state])
+                        FloatTensor([state]),
+                        action
                         ))
 
             rewardSum = 0
@@ -125,23 +126,6 @@ class DES():
                 episodeSum += G
                 return G
     
-    def ExpectedValues(self, q_values):
-        # print(q_values)
-
-        optimal = q_values.max(1)[1]
-        # print(optimal)
-        result = [0]*self.BATCH_SIZE
-
-        for i in range(self.BATCH_SIZE):
-            for j in range(self.action_space_size):
-                eps = self.EPS_END + (self.EPS_START - self.EPS_END) * math.exp(-1. * (self.steps_done) / self.EPS_DECAY)
-                if optimal[i].item() == j:
-                    # print(j)
-                    result[i] += (1 - eps + eps/(self.action_space_size)) * q_values[i][j]
-                else:
-                    result[i] += eps/self.action_space_size * q_values[i][j]
-        return result
-    
     def learn(self):
         if len(self.memory) < self.BATCH_SIZE:
             return
@@ -149,12 +133,13 @@ class DES():
         # random transition batch is taken from experience replay memory
         transitions = self.memory.sample(self.BATCH_SIZE)
 
-        batch_state, batch_action, batch_reward, batch_state_new = zip(*transitions)
+        batch_state, batch_action, batch_reward, batch_state_new, batch_action_new = zip(*transitions)
 
         batch_state = Variable(torch.cat(batch_state))
         batch_action = Variable(torch.cat(batch_action))
         batch_reward = Variable(torch.cat(batch_reward))
         batch_state_new = Variable(torch.cat(batch_state_new))
+        batch_action_new = Variable(torch.cat(batch_action_new))
 
         # current Q values are estimated by NN for all actions
         current_q_values = self.model(batch_state)
@@ -163,7 +148,8 @@ class DES():
         current_q_values = current_q_values.gather(1, batch_action)
 
         # next Q values are estimated by NN for all next actions
-        expected_values = self.GAMMA * FloatTensor(self.ExpectedValues(self.model(batch_state_new).detach()))
+        new_q_values = self.model(batch_state_new).detach().gather(1,batch_action_new).squeeze(1)
+        expected_values = self.GAMMA * new_q_values
         # print(expected_values)
         q_values = (batch_reward + expected_values).view(-1,1)
 
@@ -183,16 +169,16 @@ colors = ['blue','red','green']
 if __name__ == '__main__':
     # random.seed(1)
     start_time = time.time()
-    episodes = 600
-    tests = 10
+    episodes = 400
+    tests = 8
     env_being_tested = ["MountainCar-v0","Acrobot-v1","Pendulum-v1"]
     tmp = gym.make(env_being_tested[2])
     # print("This right here",tmp.action_space.sample())
     # env_being_tested = "MountainCar-v0"
     ai_list = [
         (env_being_tested[1],1,0.001,0.995,0.9,0.05,200,64),
-        # (env_being_tested[1],3,0.001,0.995,0.9,0.05,200,64),
-        # (env_being_tested[1],5,0.001,0.995,0.9,0.05,200,64)
+        (env_being_tested[1],3,0.001,0.995,0.9,0.05,200,64),
+        (env_being_tested[1],5,0.001,0.995,0.9,0.05,200,64)
     ]
     ai_learncurve = []
     for j in range(len(ai_list)):
@@ -219,5 +205,5 @@ if __name__ == '__main__':
     plt.title("Training methods")
     ax.legend(["DES_N1","DES_N4","DES_N7"])
     print("--- %s seconds ---" % (time.time() - start_time))
-    plt.savefig('learning-curve.png')
+    plt.savefig('learning-curve-DS-Acrobot.png')
     plt.show()
