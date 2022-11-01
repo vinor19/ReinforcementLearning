@@ -16,7 +16,7 @@ from Network import Network
 import torch.nn.functional as F
 from ReplayMemory import ReplayMemory
 path='model_scripted_des.pt'
-# matplotlib.use("TkAgg")   
+matplotlib.use("TkAgg")   
 
 use_cuda = False
 FloatTensor = torch.cuda.FloatTensor if use_cuda else torch.FloatTensor
@@ -25,9 +25,10 @@ ByteTensor = torch.cuda.ByteTensor if use_cuda else torch.ByteTensor
 IntTensor = torch.cuda.IntTensor if use_cuda else torch.IntTensor
 Tensor = FloatTensor
 
-class DES():
-    def __init__(self, env = "MountainCar-v0", N=1, LR = 0.001, GAMMA = 0.99, EPS_START = 0.9, EPS_END = 0.05, EPS_DECAY = 200, BATCH_SIZE = 64):
+class DS():
+    def __init__(self, env = "MountainCar-v0", N=1, LR = 0.001, GAMMA = 0.99, EPS_START = 0.9, EPS_END = 0.05, EPS_DECAY = 200, BATCH_SIZE = 64, max_steps = 500):
         self.env_name = env
+        self.max_steps = max_steps
         self.EPS_START = EPS_START  # e-greedy threshold start value
         self.EPS_END = EPS_END  # e-greedy threshold end value
         self.EPS_DECAY = EPS_DECAY  # e-greedy threshold decay
@@ -56,6 +57,7 @@ class DES():
 
     def select_action(self, state):
         self.steps_done
+        # print(Variable(state).type(FloatTensor))
         sample = random.random()
         eps_threshold = self.EPS_END + (self.EPS_START - self.EPS_END) * math.exp(-1. * self.steps_done / self.EPS_DECAY)
         self.steps_done += 1
@@ -65,6 +67,20 @@ class DES():
                 return IntTensor([[self.available_actions[self.model(Variable(state).type(FloatTensor)).data.max(1)[1].view(1, 1).item()]]])
             else:
                 return self.model(Variable(state).type(FloatTensor)).data.max(1)[1].view(1, 1)
+        else:
+            return LongTensor([[random.randrange(self.action_space_size-1)]])  # return env.action_space.sample()
+
+    def sim_select_action(self, state):
+        self.steps_done
+        sample = random.random()
+        eps_threshold = self.EPS_END + (self.EPS_START - self.EPS_END) * math.exp(-1. * self.steps_done / self.EPS_DECAY)
+        # self.steps_done += 1
+
+        if sample > eps_threshold:
+            if self.env.action_space.shape == ():
+                return IntTensor([[self.available_actions[state.data.max(0)[1].view(1, 1).item()]]])
+            else:
+                return state.data.max(0)[1].view(1, 1)
         else:
             return LongTensor([[random.randrange(self.action_space_size-1)]])  # return env.action_space.sample()
 
@@ -104,7 +120,7 @@ class DES():
                 action = self.select_action(FloatTensor([state])).long()
 
                 
-                if steps >= 1500:
+                if steps >= self.max_steps:
                     done = True
                 if done:
                     break
@@ -118,7 +134,8 @@ class DES():
 
             rewardSum = 0
 
-            self.learn()
+            if len(self.memory) % 2 == 0:
+                self.learn()
 
             if done:
                 # self.env.render()
@@ -148,7 +165,9 @@ class DES():
         current_q_values = current_q_values.gather(1, batch_action)
 
         # next Q values are estimated by NN for all next actions
-        new_q_values = self.model(batch_state_new).detach().gather(1,batch_action_new).squeeze(1)
+        new_q_values = self.model(batch_state_new).detach()
+        batch_action_new = LongTensor([[self.sim_select_action(x).item()] for x in new_q_values])
+        new_q_values = new_q_values.gather(1,batch_action_new).squeeze(1)
         expected_values = self.GAMMA * new_q_values
         # print(expected_values)
         q_values = (batch_reward + expected_values).view(-1,1)
@@ -183,7 +202,7 @@ if __name__ == '__main__':
     ai_learncurve = []
     for j in range(len(ai_list)):
         for i in range(tests):
-            ai = DES(*ai_list[j])
+            ai = DS(*ai_list[j])
             ai_learncurve.append(ai.train(episodes))
             print("Intermediary Done")
             # print(ai_learncurve)

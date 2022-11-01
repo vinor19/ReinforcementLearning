@@ -1,5 +1,4 @@
 import time
-
 import matplotlib
 from matplotlib import pyplot as plt
 time.clock = time.time
@@ -16,7 +15,7 @@ from Network import Network
 import torch.nn.functional as F
 from ReplayMemory import ReplayMemory
 path='model_scripted_des.pt'
-# matplotlib.use("TkAgg")   
+matplotlib.use("TkAgg")   
 
 use_cuda = False
 FloatTensor = torch.cuda.FloatTensor if use_cuda else torch.FloatTensor
@@ -26,8 +25,9 @@ IntTensor = torch.cuda.IntTensor if use_cuda else torch.IntTensor
 Tensor = FloatTensor
 
 class DES():
-    def __init__(self, env = "MountainCar-v0", N=1, LR = 0.001, GAMMA = 0.99, EPS_START = 0.9, EPS_END = 0.05, EPS_DECAY = 200, BATCH_SIZE = 64):
+    def __init__(self, env = "MountainCar-v0", N=1, LR = 0.001, GAMMA = 0.99, EPS_START = 0.9, EPS_END = 0.05, EPS_DECAY = 200, BATCH_SIZE = 64, max_steps = 500):
         self.env_name = env
+        self.max_steps = max_steps
         self.EPS_START = EPS_START  # e-greedy threshold start value
         self.EPS_END = EPS_END  # e-greedy threshold end value
         self.EPS_DECAY = EPS_DECAY  # e-greedy threshold decay
@@ -104,7 +104,7 @@ class DES():
                 rewardSum += self.GAMMA * reward
 
                 
-                if steps >= 1500:
+                if steps >= self.max_steps:
                     done = True
                 if done:
                     break
@@ -116,7 +116,7 @@ class DES():
                         ))
 
             rewardSum = 0
-
+            
             self.learn()
 
             if done:
@@ -183,16 +183,16 @@ colors = ['blue','red','green']
 if __name__ == '__main__':
     # random.seed(1)
     start_time = time.time()
-    episodes = 600
-    tests = 10
+    episodes = 400
+    tests = 8
     env_being_tested = ["MountainCar-v0","Acrobot-v1","Pendulum-v1"]
     tmp = gym.make(env_being_tested[2])
     # print("This right here",tmp.action_space.sample())
     # env_being_tested = "MountainCar-v0"
     ai_list = [
         (env_being_tested[1],1,0.001,0.995,0.9,0.05,200,64),
-        # (env_being_tested[1],3,0.001,0.995,0.9,0.05,200,64),
-        # (env_being_tested[1],5,0.001,0.995,0.9,0.05,200,64)
+        (env_being_tested[1],3,0.001,0.995,0.9,0.05,200,64),
+        (env_being_tested[1],5,0.001,0.995,0.9,0.05,200,64)
     ]
     ai_learncurve = []
     for j in range(len(ai_list)):
@@ -205,19 +205,19 @@ if __name__ == '__main__':
         print("Done",j)
 
     _, ax = plt.subplots()
-
+    labels = ["DES_N1","DES_N4","DES_N7"]
     for i in range(len(ai_list)):
         # print(ai_learncurve[i*tests:i*tests+tests])
         mean = np.array(ai_learncurve[i*tests:i*tests+tests]).mean(axis=0)
         # print(mean)
         std = np.array(ai_learncurve[i*tests:i*tests+tests]).std(axis=0)/np.sqrt(tests)
-        ax.plot(range(0,episodes),mean, color=colors[i])
+        ax.plot(range(0,episodes),mean, color=colors[i],label=labels[i])
         ax.fill_between(range(0,episodes),mean+std, mean-std, facecolor=colors[i], alpha=0.2)
 
     plt.xlabel("Epochs trained")
     plt.ylabel("Costs")
     plt.title("Training methods")
-    ax.legend(["DES_N1","DES_N4","DES_N7"])
+    ax.legend(labels)
     print("--- %s seconds ---" % (time.time() - start_time))
-    plt.savefig('learning-curve.png')
+    plt.savefig('learning-curve-DES-Acrobot.png')
     plt.show()

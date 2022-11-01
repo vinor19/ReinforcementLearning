@@ -2,7 +2,6 @@ import time
 
 import matplotlib
 from matplotlib import pyplot as plt
-time.clock = time.time
 import gym
 import numpy as np
 #from gym import wrappers
@@ -16,7 +15,7 @@ from Network import Network
 import torch.nn.functional as F
 from ReplayMemory import ReplayMemory
 path='model_scripted_des.pt'
-# matplotlib.use("TkAgg")   
+matplotlib.use("TkAgg")   
 
 use_cuda = False
 FloatTensor = torch.cuda.FloatTensor if use_cuda else torch.FloatTensor
@@ -25,9 +24,10 @@ ByteTensor = torch.cuda.ByteTensor if use_cuda else torch.ByteTensor
 IntTensor = torch.cuda.IntTensor if use_cuda else torch.IntTensor
 Tensor = FloatTensor
 
-class DES():
-    def __init__(self, env = "MountainCar-v0", N=1, LR = 0.001, GAMMA = 0.99, EPS_START = 0.9, EPS_END = 0.05, EPS_DECAY = 200, BATCH_SIZE = 64):
+class DQL():
+    def __init__(self, env = "MountainCar-v0", N=1, LR = 0.001, GAMMA = 0.99, EPS_START = 0.9, EPS_END = 0.05, EPS_DECAY = 200, BATCH_SIZE = 64, max_steps = 500):
         self.env_name = env
+        self.max_steps = max_steps
         self.EPS_START = EPS_START  # e-greedy threshold start value
         self.EPS_END = EPS_END  # e-greedy threshold end value
         self.EPS_DECAY = EPS_DECAY  # e-greedy threshold decay
@@ -102,7 +102,7 @@ class DES():
                 steps += 1
                 G += reward
                 rewardSum += self.GAMMA * reward
-                if steps >= 1500:
+                if steps >= self.max_steps:
                     done = True
                 if done:
                     break
@@ -114,8 +114,8 @@ class DES():
                         ))
 
             rewardSum = 0
-            if len(self.memory) % 2 == 0:
-                self.learn()
+            
+            self.learn()
 
             if done:
                 # self.env.render()
@@ -180,7 +180,7 @@ if __name__ == '__main__':
     ai_learncurve = []
     for j in range(len(ai_list)):
         for i in range(tests):
-            ai = DES(*ai_list[j])
+            ai = DQL(*ai_list[j])
             ai_learncurve.append(ai.train(episodes))
             print("Intermediary Done")
             # print(ai_learncurve)
@@ -188,7 +188,7 @@ if __name__ == '__main__':
         print("Done",j)
 
     _, ax = plt.subplots()
-    labels = ["DES_N1","DES_N3","DES_N5"]
+    labels = ["DQL_N1","DQL_N3","DQL_N5"]
     for i in range(len(ai_list)):
         # print(ai_learncurve[i*tests:i*tests+tests])
         mean = np.array(ai_learncurve[i*tests:i*tests+tests]).mean(axis=0)
